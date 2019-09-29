@@ -42,6 +42,7 @@ working_modules.update([
     "_csv", "_pypyjson", "_posixsubprocess", "_cppyy", # "micronumpy",
     "_jitlog",
     #" _ssl", "_hashlib", "crypt"
+    "mamba",
 ])
 
 import rpython.rlib.rvmprof.cintf
