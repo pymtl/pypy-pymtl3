@@ -8,7 +8,9 @@ from rpython.rtyper.lltypesystem import lltype, rffi
 
 
 class AsmMemoryManager(object):
-    LARGE_ALLOC_SIZE = 1024 * 1024   # 1MB
+    # Berkin: use a larger allocation size to help transparent huge pages
+    # to work.
+    LARGE_ALLOC_SIZE = 1024 * 1024 * 32  # 32MB
     MIN_FRAGMENT = 64
     NUM_INDICES = 32     # good for all sizes between 64 bytes and ~490 KB
     _allocated = None

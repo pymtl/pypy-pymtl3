@@ -13,6 +13,7 @@ from rpython.translator.tool.cbuild import ExternalCompilationInfo
 from rpython.rlib.objectmodel import we_are_translated, specialize
 from rpython.rlib.nonconst import NonConstant
 from rpython.rlib.rarithmetic import intmask
+from rpython.rlib.debug import debug_start, debug_print, debug_stop
 
 import sys
 import os
@@ -61,7 +62,8 @@ if _POSIX:
                       'MS_SYNC']
     opt_constant_names = ['MAP_ANON', 'MAP_ANONYMOUS', 'MAP_NORESERVE',
                           'PROT_EXEC',
-                          'MAP_DENYWRITE', 'MAP_EXECUTABLE']
+                          'MAP_DENYWRITE', 'MAP_EXECUTABLE',
+                          'MAP_HUGETLB']
     for name in constant_names:
         setattr(CConfig, name, rffi_platform.ConstantInteger(name))
     for name in opt_constant_names:
@@ -709,8 +711,13 @@ if _POSIX:
         m.setdata(res, map_size)
         return m
 
-    def alloc_hinted(hintp, map_size):
+    def alloc_hinted(hintp, map_size, hugetlb=False):
+        debug_start("jit-alloc")
+        debug_print("Map size: %d" % map_size)
+        debug_stop("jit-alloc")
         flags = MAP_PRIVATE | MAP_ANONYMOUS
+        if hugetlb:
+            flags = flags | MAP_HUGETLB
         prot = PROT_EXEC | PROT_READ | PROT_WRITE
         if we_are_translated():
             flags = NonConstant(flags)
@@ -748,7 +755,12 @@ if _POSIX:
             if res == rffi.cast(PTR, 0):
                 raise MemoryError
             return res
-        res = alloc_hinted(rffi.cast(PTR, hint.pos), map_size)
+        # Berkin: first try with hugetlb.
+        res = alloc_hinted(rffi.cast(PTR, hint.pos), map_size, hugetlb=True)
+        if res == rffi.cast(PTR, -1):
+            # Berkin: if it fails, hugetlb might be disabled, try without
+            # it.
+            res = alloc_hinted(rffi.cast(PTR, hint.pos), map_size)
         if res == rffi.cast(PTR, -1):
             # some systems (some versions of OS/X?) complain if they
             # are passed a non-zero address.  Try again.

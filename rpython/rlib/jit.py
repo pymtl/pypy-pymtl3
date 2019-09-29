@@ -841,8 +841,8 @@ def set_user_param(driver, text):
             for name1, _ in unroll_parameters:
                 if name1 == name and name1 != 'enable_opts':
                     try:
-                        if name1 == 'trace_limit' and int(value) > 2**14:
-                            raise TraceLimitTooHigh
+                        # if name1 == 'trace_limit' and int(value) > 2**14:
+                            # raise TraceLimitTooHigh
                         set_param(driver, name1, int(value))
                     except ValueError:
                         raise
