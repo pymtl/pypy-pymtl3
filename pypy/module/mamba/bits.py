@@ -503,9 +503,8 @@ class W_Bits(W_Root):
     self.intval = intval
     self.bigval = bigval
 
-
   def descr_copy(self):
-    return W_Bits(self.nbits, self.intval, self.bigval)
+    return W_Bits( self.nbits, self.intval, self.bigval )
 
   def descr_deepcopy(self, w_memo):
     return self.descr_copy()
@@ -530,7 +529,6 @@ class W_Bits(W_Root):
             w_obj.intval = w_value.intval & mask
           else:
             w_obj.intval = w_value.bigval.digit(0) & mask
-
         elif isinstance(w_value, W_IntObject):
           w_obj.intval = w_value.intval & mask
         elif type(w_value) is W_LongObject:
@@ -597,6 +595,8 @@ class W_Bits(W_Root):
             start = tmp.digit(0)
         elif type(w_start) is W_IntObject:
           start = w_start.intval
+        elif type(w_start) is W_LongObject:
+          start = w_start.num.toint()
         else:
           raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #1" )
 
@@ -613,6 +613,8 @@ class W_Bits(W_Root):
             stop = tmp.digit(0)
         elif type(w_stop) is W_IntObject:
           stop = w_stop.intval
+        elif type(w_stop) is W_LongObject:
+          stop = w_stop.num.toint()
         else:
           raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #2" )
 
@@ -645,6 +647,8 @@ class W_Bits(W_Root):
           index = tmp.digit(0) # must >= 0
       elif type(w_index) is W_IntObject:
         index = w_index.intval
+      elif type(w_index) is W_LongObject:
+        index = w_index.num.toint()
         if index < 0:
           raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
       else:
@@ -673,6 +677,8 @@ class W_Bits(W_Root):
             start = tmp.digit(0)
         elif type(w_start) is W_IntObject:
           start = w_start.intval
+        elif type(w_start) is W_LongObject:
+          start = w_start.num.toint()
         else:
           raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- setitem #1" )
 
@@ -689,6 +695,8 @@ class W_Bits(W_Root):
             stop = tmp.digit(0)
         elif isinstance(w_stop, W_IntObject):
           stop = w_stop.intval
+        elif type(w_stop) is W_LongObject:
+          stop = w_stop.num.toint()
         else:
           raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- setitem #2" )
 
@@ -772,6 +780,10 @@ class W_Bits(W_Root):
           index = tmp.digit(0) # must >= 0
       elif type(w_index) is W_IntObject:
         index = w_index.intval
+        if index < 0:
+          raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
+      elif type(w_index) is W_LongObject:
+        index = w_index.num.toint()
         if index < 0:
           raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
       else:
