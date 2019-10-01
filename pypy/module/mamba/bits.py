@@ -1210,11 +1210,11 @@ class W_Bits(W_Root):
   # unary ops
   #-----------------------------------------------------------------------
 
-  def descr_nonzero(self, space):
+  def descr_bool(self, space):
     if self.nbits <= SHIFT:
-      return wrapint( space, self.intval != 0 )
+      return space.newbool( self.intval != 0 )
     else:
-      return wrapint( space, self.bigval.sign != 0 )
+      return space.newbool( self.bigval.sign != 0 )
 
   def descr_invert(self, space):
     if self.nbits <= SHIFT:
@@ -1260,8 +1260,8 @@ W_Bits.typedef = TypeDef("Bits",
     # Unary ops
     # __neg__     = interp2app(W_Bits.descr_neg),
     # __abs__     = interp2app(W_Bits.descr_abs),
-    __nonzero__ = interp2app(W_Bits.descr_nonzero),
-    __invert__  = interp2app(W_Bits.descr_invert),
+    __bool__   = interp2app(W_Bits.descr_bool), # no __nonzero__ in Python3 anymore
+    __invert__ = interp2app(W_Bits.descr_invert),
 
     # Binary fast arith ops
     __add__  = interp2app(W_Bits.descr_add),
