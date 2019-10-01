@@ -598,7 +598,7 @@ class W_Bits(W_Root):
         elif type(w_start) is W_IntObject:
           start = w_start.intval
         else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice." )
+          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #1" )
 
         w_stop = w_index.w_stop
         stop   = 0
@@ -614,7 +614,7 @@ class W_Bits(W_Root):
         elif type(w_stop) is W_IntObject:
           stop = w_stop.intval
         else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice." )
+          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #2" )
 
         self.check_slice_range( space, start, stop )
         slice_nbits = stop - start
@@ -648,7 +648,7 @@ class W_Bits(W_Root):
         if index < 0:
           raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
       else:
-        raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice." )
+        raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #3" )
 
       if index >= self.nbits:
         raise oefmt(space.w_ValueError, "Index [%d] too big for Bits%d", index, self.nbits )
@@ -674,7 +674,7 @@ class W_Bits(W_Root):
         elif type(w_start) is W_IntObject:
           start = w_start.intval
         else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice." )
+          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- setitem #1" )
 
         w_stop = w_index.w_stop
         stop   = 0
@@ -690,7 +690,7 @@ class W_Bits(W_Root):
         elif isinstance(w_stop, W_IntObject):
           stop = w_stop.intval
         else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice." )
+          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- setitem #2" )
 
         self.check_slice_range( space, start, stop )
         slice_nbits = stop - start
@@ -775,7 +775,7 @@ class W_Bits(W_Root):
         if index < 0:
           raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
       else:
-        raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice." )
+        raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- setitem #3" )
 
       if index >= self.nbits:
         raise oefmt(space.w_ValueError, "Index [%d] too big for Bits%d", index, self.nbits )
@@ -816,7 +816,7 @@ class W_Bits(W_Root):
         else:
           self.bigval = _rbigint_setidx( self.bigval, index, other )
       else:
-        raise oefmt(space.w_TypeError, "Please pass in int/long/Bits value." )
+        raise oefmt(space.w_TypeError, "Please pass in int/long/Bits value. -- setitem #4" )
 
   #-----------------------------------------------------------------------
   # Miscellaneous methods for string format
