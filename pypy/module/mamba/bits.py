@@ -1,20 +1,18 @@
 import operator
 
 from rpython.rlib import jit
-from rpython.rlib.rarithmetic import LONG_BIT
+from rpython.rlib.rarithmetic import intmask
 from rpython.rlib.rbigint     import rbigint, SHIFT, NULLDIGIT, ONERBIGINT, \
                                      NULLRBIGINT, _store_digit, _x_int_sub, \
                                      _widen_digit
-from rpython.rlib.objectmodel import specialize
 from rpython.tool.sourcetools import func_renamer, func_with_new_name
 
 from pypy.interpreter.baseobjspace import W_Root
-from pypy.interpreter.gateway import WrappedDefault, interp2app, unwrap_spec
+from pypy.interpreter.gateway import WrappedDefault, interp2app, interpindirect2app, unwrap_spec
 from pypy.interpreter.error import OperationError, oefmt
 from pypy.interpreter.typedef import TypeDef, GetSetProperty
-from pypy.objspace.std.intobject import W_IntObject, wrapint, ovfcheck
-from pypy.objspace.std.longobject import W_LongObject, newlong
-from pypy.objspace.std.boolobject import W_BoolObject
+from pypy.objspace.std.intobject import W_IntObject, wrapint, ovfcheck, _hash_int
+from pypy.objspace.std.longobject import W_LongObject, newlong, _hash_long
 from pypy.objspace.std.sliceobject import W_SliceObject
 from pypy.objspace.std.util import COMMUTATIVE_OPS
 
@@ -896,7 +894,9 @@ class W_Bits(W_Root):
           # TODO Maybe add bit_length check?
           return W_Bits( 1, llop( x, get_long_mask(self.nbits).and_( w_other.num ) ) )
 
-      raise oefmt(space.w_TypeError, "Please compare two Bits/int/long objects" )
+      return W_Bits( 1, 0 )
+      # Match cpython behavior
+      # raise oefmt(space.w_TypeError, "Please compare two Bits/int/long objects" )
 
     return descr_cmp
 
@@ -1236,6 +1236,20 @@ class W_Bits(W_Root):
 
   # def descr_neg(self, space):
 
+  def descr_hash(self, space):
+    hash_nbits = _hash_int( self.nbits )
+    hash_value = _hash_int( self.intval )
+    if self.nbits > SHIFT:
+      hash_value = _hash_long( space, self.bigval )
+
+    # Manually implement a single iter of W_TupleObject.descr_hash
+
+    x = 0x345678
+    x = (x ^ hash_nbits) * 1000003
+    x = (x ^ hash_value) * (1000003+82520+1+1)
+    x += 97531
+    return space.newint( intmask(x) )
+
 W_Bits.typedef = TypeDef("Bits",
     nbits = GetSetProperty(W_Bits.descr_get_nbits),
 
@@ -1244,70 +1258,71 @@ W_Bits.typedef = TypeDef("Bits",
 
     # Basic operations
     __new__ = interp2app(W_Bits.descr_new),
-    __getitem__ = interp2app(W_Bits.descr_getitem),
-    __setitem__ = interp2app(W_Bits.descr_setitem),
-    __copy__ = interp2app(W_Bits.descr_copy),
-    __deepcopy__ = interp2app(W_Bits.descr_deepcopy),
+    __getitem__ = interpindirect2app(W_Bits.descr_getitem),
+    __setitem__ = interpindirect2app(W_Bits.descr_setitem),
+    __copy__ = interpindirect2app(W_Bits.descr_copy),
+    __deepcopy__ = interpindirect2app(W_Bits.descr_deepcopy),
 
     # String formats
-    __oct__  = interp2app(W_Bits.descr_oct),
-    __hex__  = interp2app(W_Bits.descr_hex),
-    __repr__ = interp2app(W_Bits.descr_repr),
-    __str__  = interp2app(W_Bits.descr_str),
+    __oct__  = interpindirect2app(W_Bits.descr_oct),
+    __hex__  = interpindirect2app(W_Bits.descr_hex),
+    __repr__ = interpindirect2app(W_Bits.descr_repr),
+    __str__  = interpindirect2app(W_Bits.descr_str),
 
     # Comparators
-    __lt__ = interp2app(W_Bits.descr_lt),
-    __le__ = interp2app(W_Bits.descr_le),
-    __eq__ = interp2app(W_Bits.descr_eq),
-    __ne__ = interp2app(W_Bits.descr_ne),
-    __gt__ = interp2app(W_Bits.descr_gt),
-    __ge__ = interp2app(W_Bits.descr_ge),
+    __lt__ = interpindirect2app(W_Bits.descr_lt),
+    __le__ = interpindirect2app(W_Bits.descr_le),
+    __eq__ = interpindirect2app(W_Bits.descr_eq),
+    __ne__ = interpindirect2app(W_Bits.descr_ne),
+    __gt__ = interpindirect2app(W_Bits.descr_gt),
+    __ge__ = interpindirect2app(W_Bits.descr_ge),
 
     # Value access
-    __int__   = interp2app(W_Bits.descr_uint), # TODO use uint now
-    __pos__   = interp2app(W_Bits.descr_pos),
-    __index__ = interp2app(W_Bits.descr_index),
-    __long__  = interp2app(W_Bits.descr_long),
+    __int__   = interpindirect2app(W_Bits.descr_uint), # TODO use uint now
+    __pos__   = interpindirect2app(W_Bits.descr_pos),
+    __index__ = interpindirect2app(W_Bits.descr_index),
+    __long__  = interpindirect2app(W_Bits.descr_long),
 
     # Unary ops
-    # __neg__     = interp2app(W_Bits.descr_neg),
-    # __abs__     = interp2app(W_Bits.descr_abs),
-    __bool__   = interp2app(W_Bits.descr_bool), # no __nonzero__ in Python3 anymore
-    __invert__ = interp2app(W_Bits.descr_invert),
+    # __neg__     = interpindirect2app(W_Bits.descr_neg),
+    # __abs__     = interpindirect2app(W_Bits.descr_abs),
+    __bool__   = interpindirect2app(W_Bits.descr_bool), # no __nonzero__ in Python3 anymore
+    __invert__ = interpindirect2app(W_Bits.descr_invert),
+    __hash__   = interpindirect2app(W_Bits.descr_hash),
 
     # Binary fast arith ops
-    __add__  = interp2app(W_Bits.descr_add),
-    __radd__ = interp2app(W_Bits.descr_radd),
-    __sub__  = interp2app(W_Bits.descr_sub),
-    __rsub__ = interp2app(W_Bits.descr_rsub),
-    __mul__  = interp2app(W_Bits.descr_mul),
-    __rmul__ = interp2app(W_Bits.descr_rmul),
+    __add__  = interpindirect2app(W_Bits.descr_add),
+    __radd__ = interpindirect2app(W_Bits.descr_radd),
+    __sub__  = interpindirect2app(W_Bits.descr_sub),
+    __rsub__ = interpindirect2app(W_Bits.descr_rsub),
+    __mul__  = interpindirect2app(W_Bits.descr_mul),
+    __rmul__ = interpindirect2app(W_Bits.descr_rmul),
 
     # Binary logic ops
-    __and__  = interp2app(W_Bits.descr_and),
-    __rand__ = interp2app(W_Bits.descr_rand),
-    __or__   = interp2app(W_Bits.descr_or),
-    __ror__  = interp2app(W_Bits.descr_ror),
-    __xor__  = interp2app(W_Bits.descr_xor),
-    __rxor__ = interp2app(W_Bits.descr_rxor),
+    __and__  = interpindirect2app(W_Bits.descr_and),
+    __rand__ = interpindirect2app(W_Bits.descr_rand),
+    __or__   = interpindirect2app(W_Bits.descr_or),
+    __ror__  = interpindirect2app(W_Bits.descr_ror),
+    __xor__  = interpindirect2app(W_Bits.descr_xor),
+    __rxor__ = interpindirect2app(W_Bits.descr_rxor),
 
     # Binary shift ops
-    __lshift__  = interp2app(W_Bits.descr_lshift),
-    __rlshift__ = interp2app(W_Bits.descr_rlshift),
-    __rshift__  = interp2app(W_Bits.descr_rshift),
-    __rrshift__ = interp2app(W_Bits.descr_rrshift),
+    __lshift__  = interpindirect2app(W_Bits.descr_lshift),
+    __rlshift__ = interpindirect2app(W_Bits.descr_rlshift),
+    __rshift__  = interpindirect2app(W_Bits.descr_rshift),
+    __rrshift__ = interpindirect2app(W_Bits.descr_rrshift),
 
     # Binary slow arith ops
-    # __floordiv__  = interp2app(W_Bits.descr_floordiv),
-    # __rfloordiv__ = interp2app(W_Bits.descr_rfloordiv),
-    # __div__       = interp2app(W_Bits.descr_div),
-    # __rdiv__      = interp2app(W_Bits.descr_rdiv),
-    # __truediv__   = interp2app(W_Bits.descr_truediv),
-    # __rtruediv__  = interp2app(W_Bits.descr_rtruediv),
-    # __mod__       = interp2app(W_Bits.descr_mod),
-    # __rmod__      = interp2app(W_Bits.descr_rmod),
-    # __divmod__    = interp2app(W_Bits.descr_divmod),
-    # __rdivmod__   = interp2app(W_Bits.descr_rdivmod),
-    # __pow__       = interp2app(W_Bits.descr_pow),
-    # __rpow__      = interp2app(W_Bits.descr_rpow),
+    # __floordiv__  = interpindirect2app(W_Bits.descr_floordiv),
+    # __rfloordiv__ = interpindirect2app(W_Bits.descr_rfloordiv),
+    # __div__       = interpindirect2app(W_Bits.descr_div),
+    # __rdiv__      = interpindirect2app(W_Bits.descr_rdiv),
+    # __truediv__   = interpindirect2app(W_Bits.descr_truediv),
+    # __rtruediv__  = interpindirect2app(W_Bits.descr_rtruediv),
+    # __mod__       = interpindirect2app(W_Bits.descr_mod),
+    # __rmod__      = interpindirect2app(W_Bits.descr_rmod),
+    # __divmod__    = interpindirect2app(W_Bits.descr_divmod),
+    # __rdivmod__   = interpindirect2app(W_Bits.descr_rdivmod),
+    # __pow__       = interpindirect2app(W_Bits.descr_pow),
+    # __rpow__      = interpindirect2app(W_Bits.descr_rpow),
 )
