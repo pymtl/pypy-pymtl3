@@ -851,7 +851,7 @@ class W_Bits(W_Root):
     return space.text_w( w_data.descr_zfill(space, (((self.nbits-1)>>2)+1)) )
 
   def descr_repr(self, space):
-    return space.newtext( "Bits%d( %s )" % (self.nbits, self._format16(space)) )
+    return space.newtext( "Bits%d( 0x%s )" % (self.nbits, self._format16(space)) )
 
   def descr_str(self, space):
     return space.newtext( "%s" % (self._format16(space)) )
