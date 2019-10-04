@@ -4,7 +4,7 @@ from rpython.rlib import jit
 from rpython.rlib.rarithmetic import intmask
 from rpython.rlib.rbigint     import rbigint, SHIFT, NULLDIGIT, ONERBIGINT, \
                                      NULLRBIGINT, _store_digit, _x_int_sub, \
-                                     _widen_digit
+                                     _widen_digit, BASE16
 from rpython.tool.sourcetools import func_renamer, func_with_new_name
 
 from pypy.interpreter.baseobjspace import W_Root
@@ -839,15 +839,22 @@ class W_Bits(W_Root):
 
   def descr_hex(self, space):
     if self.nbits <= SHIFT:
-      return space.newtext(oct(self.intval))
-    return space.newtext( rbigint.oct(self.bigval) )
+      return space.newtext(hex(self.intval))
+    return space.newtext( rbigint.hex(self.bigval) )
+
+  def _format16(self, space):
+    if self.nbits <= SHIFT:
+      data = (rbigint.fromint(self.intval)).format(BASE16)
+    else:
+      data = self.bigval.format(BASE16)
+    w_data = space.newtext( data )
+    return space.text_w( w_data.descr_zfill(space, (((self.nbits-1)>>2)+1)) )
 
   def descr_repr(self, space):
-    if self.nbits <= SHIFT:
-      return space.newtext( "Bits%d(%s)" % (self.nbits, hex(self.intval)) )
-    return space.newtext( "Bits%d(%s)" % (self.nbits, rbigint.hex(self.bigval) ))
+    return space.newtext( "Bits%d( %s )" % (self.nbits, self._format16(space)) )
 
-  descr_str = func_with_new_name(descr_repr, 'descr_str')
+  def descr_str(self, space):
+    return space.newtext( "%s" % (self._format16(space)) )
 
   #-----------------------------------------------------------------------
   # comparators
