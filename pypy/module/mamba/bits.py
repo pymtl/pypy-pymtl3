@@ -29,7 +29,7 @@ from pypy.objspace.std.util import COMMUTATIVE_OPS
 
 mask = rbigint([NULLDIGIT], 1, 1)
 LONG_MASKS = [ mask ]
-for i in xrange(511):
+for i in xrange(512):
   mask = mask.int_mul(2).int_add( 1 )
   LONG_MASKS.append( mask )
 
