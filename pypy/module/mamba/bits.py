@@ -997,6 +997,7 @@ class W_Bits(W_Root):
             z = liop( x, w_other.intval )
             if opname == "sub": z = z.and_( get_long_mask(self.nbits) )
             else:               z = _rbigint_maskoff_high( z, self.nbits )
+            return W_Bits( self.nbits, 0, z )
 
           elif type(w_other) is W_LongObject:
             z = llop( x, w_other.num )
@@ -1048,8 +1049,41 @@ class W_Bits(W_Root):
       raise oefmt(space.w_TypeError, "r%s not implemented", opname )
     return descr_binop, descr_rbinop
 
+  # Special rsub ..
+  def descr_rsub( self, space, w_other ):
+    llop = getattr( rbigint, "sub" )
+    liop = getattr( rbigint, "int_sub" )
+    iiop = getattr( operator, "sub" )
+
+    if self.nbits <= SHIFT:
+      y = self.intval
+      if isinstance(w_other, W_IntObject):
+        x = w_other.intval
+        mask = get_int_mask(self.nbits)
+        try:
+          z = ovfcheck( iiop(x, y) )
+          return W_Bits( self.nbits, z & mask )
+        except OverflowError:
+          z = liop( rbigint.fromint(x), y ).int_and_( mask ).digit(0)
+          return W_Bits( self.nbits, z )
+      elif type(w_other) is W_LongObject:
+        x = w_other.num
+        z = liop( x, y ).int_and_( get_int_mask(self.nbits) )
+        return W_Bits( self.nbits, z.digit(0) )
+    else:
+      y = self.bigval
+      if isinstance(w_other, W_IntObject):
+        z = llop( rbigint.fromint(w_other.intval), y )
+        z = z.and_( get_long_mask(self.nbits) )
+        return W_Bits( self.nbits, 0, z )
+
+      elif type(w_other) is W_LongObject:
+        z = llop( w_other.num, y )
+        z = z.and_( get_long_mask(self.nbits) )
+        return W_Bits( self.nbits, 0, z )
+
   descr_add, descr_radd = _make_descr_binop_opname('add')
-  descr_sub, descr_rsub = _make_descr_binop_opname('sub')
+  descr_sub, _          = _make_descr_binop_opname('sub')
   descr_mul, descr_rmul = _make_descr_binop_opname('mul')
 
   descr_and, descr_rand = _make_descr_binop_opname('and', ovf=False)
