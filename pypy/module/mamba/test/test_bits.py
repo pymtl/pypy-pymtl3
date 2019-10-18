@@ -92,4 +92,66 @@ class AppTestBits:
         b8._flip()
         assert b8 == mamba.Bits(8,43)
 
+    def test_ilshift_create_bits_with_next_big(self):
+        import mamba, sys
+        x = b = mamba.Bits(256,42)
+        n = mamba.Bits(256,43)
+        b <<= n
+        assert x is not b
+        assert x == b
+
+    def test_flip_on_bits_big(self):
+        import mamba, sys
+        b = mamba.Bits(256,42)
+        raises(TypeError, b._flip)
+
+    def test_flip_on_bits_with_next_big(self):
+        import mamba, sys
+        x = b = mamba.Bits(256,42)
+        n = mamba.Bits(256,43)
+        b <<= n
+        assert x is not b
+        assert x == b
+        b._flip()
+        assert n == b
+        assert x != b
+
+    def test_ilshift_on_bits_with_next_big(self):
+        import mamba, sys
+        b256 = mamba.Bits(256,42)
+        n1 = mamba.Bits(256,43)
+        b256 <<= n1
+        # now b256 should have next_intval field
+        b256._flip()
+        assert b256 == n1
+        # do the assignment again
+        n2 = mamba.Bits(256,44)
+        tmp = b256
+        b256 <<= n2
+        assert b256 is tmp
+        b256._flip()
+        assert b256 == n2
+
+    def test_ilshift_mod_after_buffering_big(self):
+        import mamba, sys
+        b256 = mamba.Bits(256,42)
+        n  = mamba.Bits(256,43)
+        b256 <<= n
+        n = n + 23
+        assert n == mamba.Bits(256,66)
+        b256._flip()
+        assert b256 == mamba.Bits(256,43)
+
+    def test_ilshift_buffer_preserve_big(self):
+        import mamba, sys
+        b256 = mamba.Bits(256,42)
+        n  = mamba.Bits(256,43)
+        b256 <<= n
+        b256._flip()
+        assert b256 == mamba.Bits(256,43)
+        b256[0:1] = 0
+        assert b256 == mamba.Bits(256,42)
+        b256._flip()
+        assert b256 == mamba.Bits(256,43)
+
 
