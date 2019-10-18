@@ -1223,7 +1223,7 @@ class W_Bits(W_Root):
       _bigval = None
     else:
       next_intval = 0
-      next_bigval = w_other.bigval
+      next_bigval = _rbigint_maskoff_high(w_other.bigval, self.nbits)
       _bigval = self.bigval
 
     return W_BitsWithNext( self.nbits, self.intval, _bigval,
@@ -1348,13 +1348,6 @@ class W_BitsWithNext(W_Bits):
   def descr_deepcopy(self, w_memo):
     return self.descr_copy()
 
-  def _descr_flip(self, space):
-    if self.nbits <= SHIFT:
-      self.intval = self.next_intval
-    else:
-      # copy over the rbigint
-      pass
-
   def _descr_ilshift(self, space, w_other):
     if not isinstance(w_other, W_Bits):
       raise oefmt(space.w_TypeError, "RHS of <<= has to be Bits, not '%T'", w_other)
@@ -1366,10 +1359,19 @@ class W_BitsWithNext(W_Bits):
     if self.nbits <= SHIFT:
       self.next_intval = w_other.intval
     else:
-      # nope you need a deepcopy
-      self.next_bigval = w_other.bigval
+      # create a new rbigint
+      self.next_bigval = _rbigint_maskoff_high(w_other.bigval, self.nbits)
 
     return self
+
+  def _descr_flip(self, space):
+    if self.nbits <= SHIFT:
+      self.intval = self.next_intval
+    else:
+      self.bigval = _rbigint_maskoff_high(self.next_bigval, self.nbits)
+
+
+
 
 W_Bits.typedef = TypeDef("Bits",
     nbits = GetSetProperty(W_Bits.descr_get_nbits),
