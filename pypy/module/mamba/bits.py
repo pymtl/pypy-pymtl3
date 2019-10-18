@@ -1206,6 +1206,40 @@ class W_Bits(W_Root):
     raise oefmt(space.w_TypeError, "rlshift not implemented" )
 
   #-----------------------------------------------------------------------
+  # Update_FF
+  #-----------------------------------------------------------------------
+
+  def _descr_ilshift(self, space, w_other):
+    if not isinstance(w_other, W_Bits):
+      raise oefmt(space.w_TypeError, "RHS of <<= has to be Bits, not '%T'", w_other)
+
+    if self.nbits != w_other.nbits:
+      raise oefmt(space.w_ValueError, "Bitwidth mismatch Bits%d <> Bits%d",
+                                      self.nbits, w_other.nbits)
+
+    if self.nbits <= SHIFT:
+      next_intval = w_other.intval
+      next_bigval = None
+      _bigval = None
+    else:
+      next_intval = 0
+      next_bigval = w_other.bigval
+      _bigval = self.bigval
+
+    return W_BitsWithNext( self.nbits, self.intval, _bigval,
+                           next_intval, next_bigval )
+
+
+  def descr_ilshift(self, space, w_other):
+    return self._descr_ilshift(space, w_other)
+
+  def _descr_flip(self, space):
+    raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects", self)
+
+  def descr_flip(self, space):
+    return self._descr_flip(space)
+
+  #-----------------------------------------------------------------------
   # value access
   #-----------------------------------------------------------------------
 
@@ -1291,6 +1325,52 @@ class W_Bits(W_Root):
     x += 97531
     return space.newint( intmask(x) )
 
+#-----------------------------------------------------------------------
+# Bits with next fields
+#-----------------------------------------------------------------------
+
+class W_BitsWithNext(W_Bits):
+  __slots__ = ( "nbits", "intval", "bigval", "next_intval", "next_bigval" )
+  _immutable_fields_ = [ "nbits" ]
+
+  def __init__( self, nbits, intval=0, bigval=None,
+                next_intval=0, next_bigval=None):
+    self.nbits  = nbits
+    self.intval = intval
+    self.bigval = bigval
+    self.next_intval = next_intval
+    self.next_bigval = next_bigval
+
+  def descr_copy(self):
+    return W_BitsWithNext( self.nbits, self.intval, self.bigval,
+                           self.next_intval, self.next_bigval )
+
+  def descr_deepcopy(self, w_memo):
+    return self.descr_copy()
+
+  def _descr_flip(self, space):
+    if self.nbits <= SHIFT:
+      self.intval = self.next_intval
+    else:
+      # copy over the rbigint
+      pass
+
+  def _descr_ilshift(self, space, w_other):
+    if not isinstance(w_other, W_Bits):
+      raise oefmt(space.w_TypeError, "RHS of <<= has to be Bits, not '%T'", w_other)
+
+    if self.nbits != w_other.nbits:
+      raise oefmt(space.w_ValueError, "Bitwidth mismatch Bits%d <> Bits%d",
+                                      self.nbits, w_other.nbits)
+
+    if self.nbits <= SHIFT:
+      self.next_intval = w_other.intval
+    else:
+      # nope you need a deepcopy
+      self.next_bigval = w_other.bigval
+
+    return self
+
 W_Bits.typedef = TypeDef("Bits",
     nbits = GetSetProperty(W_Bits.descr_get_nbits),
 
@@ -1352,6 +1432,10 @@ W_Bits.typedef = TypeDef("Bits",
     __rlshift__ = interpindirect2app(W_Bits.descr_rlshift),
     __rshift__  = interpindirect2app(W_Bits.descr_rshift),
     __rrshift__ = interpindirect2app(W_Bits.descr_rrshift),
+
+    # Update_FF
+    __ilshift__ = interpindirect2app(W_Bits.descr_ilshift),
+    _flip = interpindirect2app(W_Bits.descr_flip),
 
     # Binary slow arith ops
     # __floordiv__  = interpindirect2app(W_Bits.descr_floordiv),
