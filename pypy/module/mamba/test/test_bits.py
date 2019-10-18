@@ -30,3 +30,43 @@ class AppTestBits:
         b = mamba.Bits(512,13907095861846720239)
         assert repr(b) == 'Bits512( 0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0ffee00deadbeef )'
 
+    def test_ilshift_create_bits_with_next(self):
+        import mamba, sys
+        x = b = mamba.Bits(8,42)
+        n = mamba.Bits(8,43)
+        b <<= n
+        assert x is not b
+        assert x == b
+
+    def test_flip_on_bits(self):
+        import mamba, sys
+        b = mamba.Bits(8,42)
+        raises(TypeError, b._flip)
+
+    def test_flip_on_bits_with_next(self):
+        import mamba, sys
+        x = b = mamba.Bits(8,42)
+        n = mamba.Bits(8,43)
+        b <<= n
+        assert x is not b
+        assert x == b
+        b._flip()
+        assert n == b
+        assert x != b
+
+    def test_ilshift_on_bits_with_next(self):
+        import mamba, sys
+        b8 = mamba.Bits(8,42)
+        n1 = mamba.Bits(8,43)
+        b8 <<= n1
+        # now b8 should have next_intval field
+        b8._flip()
+        assert b8 == n1
+        # do the assignment again
+        n2 = mamba.Bits(8,44)
+        tmp = b8
+        b8 <<= n2
+        assert b8 is tmp
+        b8._flip()
+        assert b8 == n2
+
