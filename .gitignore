@@ -30,6 +30,7 @@ lib_pypy/ctypes_config_cache/_[^_]*_*.py
 libpypy-c.*
 libpypy3-c.*
 pypy-c
+pypy3-c
 pypy/goal/pypy-c
 pypy/goal/pypy3-c
 pypy/_cache
