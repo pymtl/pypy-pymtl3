@@ -70,3 +70,26 @@ class AppTestBits:
         b8._flip()
         assert b8 == n2
 
+    def test_ilshift_mod_after_buffering(self):
+        import mamba, sys
+        b8 = mamba.Bits(8,42)
+        n  = mamba.Bits(8,43)
+        b8 <<= n
+        n = n + 23
+        assert n == mamba.Bits(8,66)
+        b8._flip()
+        assert b8 == mamba.Bits(8,43)
+
+    def test_ilshift_buffer_preserve(self):
+        import mamba, sys
+        b8 = mamba.Bits(8,42)
+        n  = mamba.Bits(8,43)
+        b8 <<= n
+        b8._flip()
+        assert b8 == mamba.Bits(8,43)
+        b8[0:1] = 0
+        assert b8 == mamba.Bits(8,42)
+        b8._flip()
+        assert b8 == mamba.Bits(8,43)
+
+
