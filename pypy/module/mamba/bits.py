@@ -1206,7 +1206,7 @@ class W_Bits(W_Root):
     raise oefmt(space.w_TypeError, "rlshift not implemented" )
 
   #-----------------------------------------------------------------------
-  # Update_FF
+  # <<=
   #-----------------------------------------------------------------------
 
   def _descr_ilshift(self, space, w_other):
@@ -1435,7 +1435,7 @@ W_Bits.typedef = TypeDef("Bits",
     __rshift__  = interpindirect2app(W_Bits.descr_rshift),
     __rrshift__ = interpindirect2app(W_Bits.descr_rrshift),
 
-    # Update_FF
+    # <<=
     __ilshift__ = interpindirect2app(W_Bits.descr_ilshift),
     _flip = interpindirect2app(W_Bits.descr_flip),
 
