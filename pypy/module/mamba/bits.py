@@ -1234,7 +1234,7 @@ class W_Bits(W_Root):
     return self._descr_ilshift(space, w_other)
 
   def _descr_flip(self, space):
-    raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects", self)
+    raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects which has no _next", self)
 
   def descr_flip(self, space):
     return self._descr_flip(space)
