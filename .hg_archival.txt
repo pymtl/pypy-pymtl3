@@ -1,0 +1,5 @@
+repo: 45eff22199974f85fd96138d25510f4660aba5a1
+node: 5da45ced70e515f94686be0df47c59abd1348ebc
+branch: release-pypy3.6-v7.x
+tag: release-pypy3.6-v7.2.0
+tag: release-pypy3.6-v7.2.0rc2
