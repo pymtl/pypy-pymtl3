@@ -2,8 +2,10 @@ from pypy.interpreter import gateway
 
 def exec_pymtl(space, w_prog, w_globals=None, w_locals=None):
     frame = space.getexecutioncontext().gettopframe()
-    w_globals = normalize_dict(space, w_globals)
-    w_locals = normalize_dict(space, w_locals)
+    if w_globals is not None:
+        w_globals = normalize_dict(space, w_globals)
+    if w_locals is not None:
+        w_locals = normalize_dict(space, w_locals)
     frame.exec_(w_prog, w_globals, w_locals)
 
 app = gateway.applevel(r'''
