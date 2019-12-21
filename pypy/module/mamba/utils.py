@@ -1,44 +1,34 @@
-from pypy.interpreter.error import oefmt
-from pypy.interpreter.pycode import PyCode
-from pypy.interpreter.pyopcode import source_as_str
+from pypy.interpreter import gateway
 
-def exec_pymtl( space, w_prog, w_globals=None, w_locals=None ):
-  frame = space.getexecutioncontext().gettopframe()
-  ec = space.getexecutioncontext()
-  flags = ec.compiler.getcodeflags(frame.pycode)
+def exec_pymtl(space, w_prog, w_globals=None, w_locals=None):
+    frame = space.getexecutioncontext().gettopframe()
+    w_globals = normalize_dict(space, w_globals)
+    w_locals = normalize_dict(space, w_locals)
+    frame.exec_(w_prog, w_globals, w_locals)
 
-  if space.isinstance_w(w_prog, space.gettypeobject(PyCode.typedef)):
-    code = space.interp_w(PyCode, w_prog)
-  else:
-    from pypy.interpreter.astcompiler import consts
-    flags |= consts.PyCF_SOURCE_IS_UTF8
-    source, flags = source_as_str(space, w_prog, 'exec',
-                                  "string, bytes or code", flags)
-    code = ec.compiler.compile(source, "<string>", 'exec', flags)
+app = gateway.applevel(r'''
+    def normalize_dict( _dict ):
 
-  if (not space.is_none(w_globals) and not space.isinstance_w(w_globals, space.w_dict)):
-    raise oefmt(space.w_TypeError, 'exec() arg 2 must be a dict, not %T', w_globals)
-  if (not space.is_none(w_locals) and space.lookup(w_locals, '__getitem__') is None):
-    raise oefmt(space.w_TypeError, 'exec() arg 3 must be a mapping or None, not %T', w_locals)
+      # return the original dictionary if not running on
+      # PyPy
+      try:
+        from __pypy__ import strategy, newdict
+      except:
+        return _dict
 
-  if space.is_none(w_globals):
-    w_globals = frame.get_w_globals()
-    if space.is_none(w_locals):
-      w_locals = frame.getdictscope()
+      # return the original dictionary if already using
+      # ModuleDictStrategy
+      if strategy( _dict ) == "ModuleDictStrategy":
+        return _dict
 
-  elif space.is_none(w_locals):
-    w_locals = w_globals
+      # create a new module dict
+      new_dict = newdict("module")
 
-  # Shunning: This is from EXEC_STMT in pypy for python 2..
-  w_prog, w_globals, w_locals = space.fixedview( space.newtuple( [w_prog, w_globals, w_locals] ), 3 )
+      # copy over entries
+      for key,value in _dict.items():
+        new_dict[key] = value
 
-  space.call_method(w_globals, 'setdefault', space.newtext('__builtins__'),
-                    frame.get_builtin())
+      return new_dict
+''', filename=__file__)
 
-  plain = (frame.get_w_locals() is not None and
-           space.is_w(w_locals, frame.get_w_locals()))
-  if plain:
-    w_locals = frame.getdictscope()
-  code.exec_code(space, w_globals, w_locals)
-  if plain:
-    frame.setdictscope(w_locals)
+normalize_dict = app.interphook('normalize_dict')
