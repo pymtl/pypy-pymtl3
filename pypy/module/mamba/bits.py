@@ -1439,6 +1439,9 @@ W_Bits.typedef = TypeDef("Bits",
     __ilshift__ = interpindirect2app(W_Bits.descr_ilshift),
     _flip = interpindirect2app(W_Bits.descr_flip),
 
+    # clone
+    clone = interpindirect2app(W_Bits.descr_copy),
+
     # Binary slow arith ops
     # __floordiv__  = interpindirect2app(W_Bits.descr_floordiv),
     # __rfloordiv__ = interpindirect2app(W_Bits.descr_rfloordiv),
