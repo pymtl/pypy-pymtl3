@@ -507,6 +507,9 @@ class W_Bits(W_Root):
   def descr_deepcopy(self, w_memo):
     return self.descr_copy()
 
+  def descr_clone(self):
+    return self.descr_copy()
+
   # value can be negative! Be extremely cautious with _rb_maskoff_high
   @staticmethod
   @unwrap_spec(w_value=WrappedDefault(0))
@@ -1348,6 +1351,9 @@ class W_BitsWithNext(W_Bits):
   def descr_deepcopy(self, w_memo):
     return self.descr_copy()
 
+  def descr_clone(self):
+    return self.descr_copy()
+
   def _descr_ilshift(self, space, w_other):
     if not isinstance(w_other, W_Bits):
       raise oefmt(space.w_TypeError, "RHS of <<= has to be Bits, not '%T'", w_other)
@@ -1440,7 +1446,7 @@ W_Bits.typedef = TypeDef("Bits",
     _flip = interpindirect2app(W_Bits.descr_flip),
 
     # clone
-    clone = interpindirect2app(W_Bits.descr_copy),
+    clone = interpindirect2app(W_Bits.descr_clone),
 
     # Binary slow arith ops
     # __floordiv__  = interpindirect2app(W_Bits.descr_floordiv),
