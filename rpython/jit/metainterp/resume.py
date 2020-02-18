@@ -118,8 +118,8 @@ def capture_resumedata(framestack, virtualizable_boxes, virtualref_boxes, t):
 
 PENDINGFIELDSTRUCT = lltype.Struct('PendingField',
                                    ('lldescr', OBJECTPTR),
-                                   ('num', rffi.SHORT),
-                                   ('fieldnum', rffi.SHORT),
+                                   ('num', rffi.INT),
+                                   ('fieldnum', rffi.INT),
                                    ('itemindex', rffi.INT))
 PENDINGFIELDSP = lltype.Ptr(lltype.GcArray(PENDINGFIELDSTRUCT))
 
@@ -130,10 +130,11 @@ class TagOverflow(Exception):
 
 def tag(value, tagbits):
     assert 0 <= tagbits <= 3
-    sx = value >> 13
+    sx = value >> 29
     if sx != 0 and sx != -1:
+        # print "resume.py line 135 tagbits =", tagbits, "sx =", sx, "value =", value
         raise TagOverflow
-    return rffi.r_short(value<<2|tagbits)
+    return rffi.r_int(value<<2|tagbits)
 
 def untag(value):
     value = rarithmetic.widen(value)
@@ -157,8 +158,8 @@ TAGINT      = 1
 TAGBOX      = 2
 TAGVIRTUAL  = 3
 
-UNASSIGNED = tag(-1 << 13, TAGBOX)
-UNASSIGNEDVIRTUAL = tag(-1 << 13, TAGVIRTUAL)
+UNASSIGNED = tag(-1 << 29, TAGBOX)
+UNASSIGNEDVIRTUAL = tag(-1 << 29, TAGVIRTUAL)
 NULLREF = tag(-1, TAGCONST)
 UNINITIALIZED = tag(-2, TAGCONST)   # used for uninitialized string characters
 TAG_CONST_OFFSET = 0
@@ -195,6 +196,7 @@ class ResumeDataLoopMemo(object):
             try:
                 return tag(val, TAGINT)
             except TagOverflow:
+                # print "line 199 of resume.py, val =", val
                 pass
             tagged = self.large_ints.get(val, UNASSIGNED)
             if not tagged_eq(tagged, UNASSIGNED):
@@ -559,6 +561,7 @@ class ResumeDataVirtualAdder(VirtualVisitor):
                     # with negative index, so this guard cannot ever fail;
                     # but it's possible to try to *build* such invalid code
                     if itemindex < 0:
+                        # print "resume.py line 563 itemindex =", itemindex
                         raise TagOverflow
                 elif opnum == rop.SETFIELD_GC:
                     fieldbox = op.getarg(1)
@@ -571,6 +574,7 @@ class ResumeDataVirtualAdder(VirtualVisitor):
                 fieldnum = self._gettagged(fieldbox)
                 # the index is limited to 2147483647 (64-bit machines only)
                 if itemindex > 2147483647:
+                    # print "resume.py line 576 itemindex =", itemindex
                     raise TagOverflow
                 #
                 rd_pendingfields[i].lldescr = lldescr

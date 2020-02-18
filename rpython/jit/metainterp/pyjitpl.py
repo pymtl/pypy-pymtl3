@@ -2506,6 +2506,7 @@ class MetaInterp(object):
             self.seen_loop_header_for_jdindex = self.jitdriver_sd.index
         self.prepare_resume_from_failure(deadframe, inputargs, resumedescr)
         if self.resumekey_original_loop_token is None:   # very rare case
+            # print "_handle_guard_failure, line 2501"
             raise SwitchToBlackhole(Counters.ABORT_BRIDGE)
         self.interpret()
         assert False, "should always raise"
@@ -2799,6 +2800,7 @@ class MetaInterp(object):
         self.history.record(rop.FINISH, exits, None, descr=token)
         target_token = compile.compile_trace(self, self.resumekey, exits)
         if target_token is not token:
+            # print "compile_done_with_this_frame, line 2803"
             compile.giveup()
 
     def store_token_in_vable(self):
@@ -2824,6 +2826,7 @@ class MetaInterp(object):
         self.history.record(rop.FINISH, [valuebox], None, descr=token)
         target_token = compile.compile_trace(self, self.resumekey, [valuebox])
         if target_token is not token:
+            # print "_handle_exit_frame_with_exception, line 2501"
             compile.giveup()
 
     @specialize.arg(1)

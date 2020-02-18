@@ -655,6 +655,7 @@ class Optimizer(Optimization):
                 len(newboxes) > self.metainterp_sd.options.failargs_limit):
                 raise resume.TagOverflow
         except resume.TagOverflow:
+            # print "store_final_boxes_in_guard line 658"
             raise compile.giveup()
         # check no duplicates
         #if not we_are_translated():

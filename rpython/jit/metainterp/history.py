@@ -29,7 +29,7 @@ HOLE  = '_'
 VOID  = 'v'
 VECTOR = 'V'
 
-FAILARGS_LIMIT = 1000
+FAILARGS_LIMIT = 10000000
 
 class SwitchToBlackhole(jitexc.JitException):
     def __init__(self, reason, raising_exception=False):

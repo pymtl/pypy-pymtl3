@@ -43,11 +43,22 @@ def append_numbering(lst, item):
     elif item < 2**14:
         lst.append(rffi.cast(rffi.UCHAR, item | 0x80))
         lst.append(rffi.cast(rffi.UCHAR, item >> 7))
-    else:
-        assert item < 2**16
+    elif item < 2**21:
         lst.append(rffi.cast(rffi.UCHAR, item | 0x80))
         lst.append(rffi.cast(rffi.UCHAR, (item >> 7) | 0x80))
         lst.append(rffi.cast(rffi.UCHAR, item >> 14))
+    elif item < 2**28:
+        lst.append(rffi.cast(rffi.UCHAR, item | 0x80))
+        lst.append(rffi.cast(rffi.UCHAR, (item >> 7) | 0x80))
+        lst.append(rffi.cast(rffi.UCHAR, (item >> 14)| 0x80))
+        lst.append(rffi.cast(rffi.UCHAR, item >> 21))
+    else:
+        assert item < 2**32
+        lst.append(rffi.cast(rffi.UCHAR, item | 0x80))
+        lst.append(rffi.cast(rffi.UCHAR, (item >> 7) | 0x80))
+        lst.append(rffi.cast(rffi.UCHAR, (item >> 14)| 0x80))
+        lst.append(rffi.cast(rffi.UCHAR, (item >> 21)| 0x80))
+        lst.append(rffi.cast(rffi.UCHAR, item >> 28))
 
 
 def numb_next_item(numb, index):
@@ -61,6 +72,14 @@ def numb_next_item(numb, index):
             value &= 2**14 - 1
             value |= rffi.cast(lltype.Signed, numb.code[index]) << 14
             index += 1
+            if value & (2**21):
+                value &= 2**21 - 1
+                value |= rffi.cast(lltype.Signed, numb.code[index]) << 21
+                index += 1
+                if value & (2**28):
+                    value &= 2**28 - 1
+                    value |= rffi.cast(lltype.Signed, numb.code[index]) << 28
+                    index += 1
     if value & 1:
         value = -1 - value
     value >>= 1
