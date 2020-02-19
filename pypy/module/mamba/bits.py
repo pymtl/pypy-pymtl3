@@ -356,18 +356,24 @@ def setitem_long_long_helper( value, other, start, stop ):
 
     # do start
     bitstart = start - wordstart*SHIFT
-    tmpstart = other.digit( wordstart )
-    if bitstart:
-      tmpstart |= ret.digit(wordstart) & get_int_mask(bitstart) # lo
+    tmpstart = other.digit( wordstart ) | (ret.digit(wordstart) & get_int_mask(bitstart))
+    # if bitstart:
+      # tmpstart |= ret.digit(wordstart) & get_int_mask(bitstart) # lo
     ret.setdigit( wordstart, tmpstart )
 
     i = wordstart+1
-    while i < osize:
-      ret.setdigit( i, other.digit(i) )
-      i += 1
-    while i < wordstop:
-      ret._digits[i] = NULLDIGIT
-      i += 1
+
+    if osize < wordstop:
+      while i < osize:
+        ret.setdigit( i, other.digit(i) )
+        i += 1
+      while i < wordstop:
+        ret._digits[i] = NULLDIGIT
+        i += 1
+    else: # osize >= wordstop
+      while i < wordstop:
+        ret.setdigit( i, other.digit(i) )
+        i += 1
 
     # do stop
     bitstop  = stop - wordstop*SHIFT

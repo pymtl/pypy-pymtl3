@@ -153,5 +153,3 @@ class AppTestBits:
         assert b256 == mamba.Bits(256,42)
         b256._flip()
         assert b256 == mamba.Bits(256,43)
-
-
