@@ -61,8 +61,6 @@ def concat_impl(space, args):
             else:
                 ret.bigval = setitem_long_long_helper( ret.bigval, arg_w.bigval, start, stop )
 
-            print start, stop, str(ret.descr_str(space))
-
             stop = start
 
     return ret
