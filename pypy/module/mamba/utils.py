@@ -86,8 +86,8 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
     else:
       tmp = w_nbytes.bigval
       if tmp.numdigits() > 1:
-        raise oefmt(space.w_ValueError, "Index [%s] too big for bytearray read Bits%d",
-                                        rbigint.str(tmp), self.nbits )
+        raise oefmt(space.w_ValueError, "nbytes [%s] too big for bytearray read Bits%d",
+                                        rbigint.str(tmp), w_nbytes.nbits )
       nbytes = tmp.digit(0)
   elif type(w_nbytes) is W_IntObject:
     nbytes = w_nbytes.intval
@@ -104,7 +104,7 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
       tmp = w_addr.bigval
       if tmp.numdigits() > 1:
         raise oefmt(space.w_ValueError, "Index [%s] too big for bytearray read Bits%d",
-                                        rbigint.str(tmp), self.nbits )
+                                        rbigint.str(tmp), w_addr.nbits )
       addr = tmp.digit(0)
   elif type(w_addr) is W_IntObject:
     addr = w_addr.intval
@@ -151,11 +151,13 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
         current_word = item >> this_nbits
         bitstart =  8 - this_nbits
 
-    if current_word != 0:
-      digits.append(_store_digit(current_word))
+    digits.append(_store_digit(current_word))
 
-    return W_Bits( nbytes<<3, 0, rbigint(digits[:], 0) )
+    bigval = rbigint(digits[:], sign=1) # 1 is positive!!!
+    bigval._normalize()
+
+    return W_Bits( nbytes<<3, 0, bigval )
 
 def read_bytearray_bits(space, w_arr, w_addr, w_nbytes):
-    """read_bytearray_bits( bytearray, addr, nbytes )"""
-    return read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes )
+  """read_bytearray_bits( bytearray, addr, nbytes )"""
+  return read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes )
