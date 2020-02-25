@@ -1226,17 +1226,8 @@ class W_Bits(W_Root):
       raise oefmt(space.w_ValueError, "Bitwidth mismatch Bits%d <> Bits%d",
                                       self.nbits, w_other.nbits)
 
-    if self.nbits <= SHIFT:
-      next_intval = w_other.intval
-      next_bigval = None
-      _bigval = None
-    else:
-      next_intval = 0
-      next_bigval = _rbigint_maskoff_high(w_other.bigval, self.nbits)
-      _bigval = self.bigval
-
-    return W_BitsWithNext( self.nbits, self.intval, _bigval,
-                           next_intval, next_bigval )
+    return W_BitsWithNext( self.nbits, self.intval, self.bigval,
+                                       w_other.intval, w_other.bigval )
 
 
   def descr_ilshift(self, space, w_other):
@@ -1368,22 +1359,14 @@ class W_BitsWithNext(W_Bits):
       raise oefmt(space.w_ValueError, "Bitwidth mismatch Bits%d <> Bits%d",
                                       self.nbits, w_other.nbits)
 
-    if self.nbits <= SHIFT:
-      self.next_intval = w_other.intval
-    else:
-      # create a new rbigint
-      self.next_bigval = _rbigint_maskoff_high(w_other.bigval, self.nbits)
+    self.next_intval = w_other.intval
+    self.next_bigval = w_other.bigval
 
     return self
 
   def _descr_flip(self, space):
-    if self.nbits <= SHIFT:
-      self.intval = self.next_intval
-    else:
-      self.bigval = _rbigint_maskoff_high(self.next_bigval, self.nbits)
-
-
-
+    self.intval = self.next_intval
+    self.bigval = self.next_bigval
 
 W_Bits.typedef = TypeDef("Bits",
     nbits = GetSetProperty(W_Bits.descr_get_nbits),
