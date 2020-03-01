@@ -477,6 +477,7 @@ def setitem_long_int_helper( value, other, start, stop ):
 
   # wordstart < vsize <= wordstop, highest bits will be cleared
   newsize = wordstart + 2 #
+  assert wordstart >= 0
   ret = rbigint( value._digits[:wordstart] + \
                 [NULLDIGIT, NULLDIGIT], 1, newsize )
 
@@ -840,29 +841,15 @@ class W_Bits(W_Root):
   # Miscellaneous methods for string format
   #-----------------------------------------------------------------------
 
-  def descr_bin_(self, space):
-    if self.nbits <= SHIFT:
-      return space.newtext(bin(self.intval))
-    return space.newtext( rbigint.bin(self.bigval) )
-
-  def descr_oct_(self, space):
+  def descr_oct(self, space):
     if self.nbits <= SHIFT:
       return space.newtext(oct(self.intval))
     return space.newtext( rbigint.oct(self.bigval) )
 
-  def descr_hex_(self, space):
+  def descr_hex(self, space):
     if self.nbits <= SHIFT:
       return space.newtext(hex(self.intval))
     return space.newtext( rbigint.hex(self.bigval) )
-
-  def descr_bin(self, space):
-    return self.descr_bin_( space )
-
-  def descr_oct(self, space):
-    return self.descr_oct_( space )
-
-  def descr_hex(self, space):
-    return self.descr_hex_( space )
 
   def _format16(self, space):
     if self.nbits <= SHIFT:
@@ -1395,12 +1382,8 @@ W_Bits.typedef = TypeDef("Bits",
     __deepcopy__ = interpindirect2app(W_Bits.descr_deepcopy),
 
     # String formats
-    __bin__  = interpindirect2app(W_Bits.descr_bin_),
-    __oct__  = interpindirect2app(W_Bits.descr_oct_),
-    __hex__  = interpindirect2app(W_Bits.descr_hex_),
-    bin      = interpindirect2app(W_Bits.descr_bin),
-    oct      = interpindirect2app(W_Bits.descr_oct),
-    hex      = interpindirect2app(W_Bits.descr_hex),
+    __oct__  = interpindirect2app(W_Bits.descr_oct),
+    __hex__  = interpindirect2app(W_Bits.descr_hex),
     __repr__ = interpindirect2app(W_Bits.descr_repr),
     __str__  = interpindirect2app(W_Bits.descr_str),
 
