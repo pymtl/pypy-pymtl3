@@ -80,6 +80,76 @@ def _rbigint_maskoff_high( value, masklen ):
   ret._normalize()
   return ret
 
+def _get_slice_range(space, nbits, w_start, w_stop):
+  w_start = w_index.w_start
+  start   = 0
+
+  if type(w_start) is W_IntObject:
+    start = w_start.intval
+  elif isinstance(w_start, W_SmallBits):
+    start = w_start.intval
+  elif isinstance(w_start, W_BigBits):
+    tmp = w_start.bigval
+    if tmp.numdigits() > 1:
+      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
+                                      rbigint.str(tmp), nbits )
+    start = tmp.digit(0)
+  elif type(w_start) is W_LongObject:
+    start = w_start.num.toint()
+  else:
+    raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #1" )
+
+  w_stop = w_index.w_stop
+  stop   = 0
+  if type(w_stop) is W_IntObject:
+    stop = w_stop.intval
+  elif isinstance(w_stop, W_SmallBits):
+    stop = w_stop.intval
+  elif isinstance(w_stop, W_BigBits):
+    tmp = w_stop.bigval
+    if tmp.numdigits() > 1:
+      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
+                                      rbigint.str(tmp), nbits )
+    stop = tmp.digit(0)
+  elif type(w_stop) is W_LongObject:
+    stop = w_stop.num.toint()
+  else:
+    raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #2" )
+
+  if start >= stop:
+    raise oefmt(space.w_ValueError, "Invalid range: start [%d] >= stop [%d]", start, stop )
+  if start < 0:
+    raise oefmt(space.w_ValueError, "Negative start: [%d]", start )
+  if stop > nbits:
+    raise oefmt(space.w_ValueError, "Stop [%d] too big for Bits%d", stop, nbits )
+
+  return start, stop
+
+def _get_index(space, nbits, w_index):
+  index = 0
+  if   type(w_index) is W_IntObject:
+    index = w_index.intval
+  elif isinstance(w_index, W_SmallBits):
+    index = w_index.intval
+    if index < 0:
+      raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
+  elif isinstance(w_index, W_BigBits):
+    tmp = w_index.bigval
+    if tmp.numdigits() > 1:
+      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
+                                      rbigint.str(tmp), nbits )
+    index = tmp.digit(0)
+  elif type(w_index) is W_LongObject:
+    index = w_index.num.toint()
+    if index < 0:
+      raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
+  else:
+    raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #3" )
+
+  if index >= nbits:
+    raise oefmt(space.w_ValueError, "Index [%d] too big for Bits%d", index, nbits )
+  return index
+
 #-------------------------------------------------------------------------
 # Shunning: The following functions are specialized implementations for
 # Bits arithmetics. Basically we squash arithmetic ops and ANDing mask to
@@ -233,16 +303,6 @@ class W_AbstractBits(W_Root):
       raise oefmt(space.w_TypeError, "'nbits' must be an int, not '%T'", w_nbits )
     return ret
 
-  def check_slice_range( self, space, start, stop ):
-    if start >= stop:
-      raise oefmt(space.w_ValueError, "Invalid range: start [%d] >= stop [%d]", start, stop )
-    if start < 0:
-      raise oefmt(space.w_ValueError, "Negative start: [%d]", start )
-    if stop > self.nbits:
-      raise oefmt(space.w_ValueError, "Stop [%d] too big for Bits%d", stop, self.nbits )
-
-  check_slice_range._always_inline_ = True
-
   # Bits specific
 
   def _format16(self, space):
@@ -307,44 +367,10 @@ class W_SmallBits(W_AbstractBits):
 
     if type(w_index) is W_SliceObject:
       if space.is_w(w_index.w_step, space.w_None):
-        w_start = w_index.w_start
-        start   = 0
 
-        if type(w_start) is W_IntObject:
-          start = w_start.intval
-        elif isinstance(w_start, W_SmallBits):
-          start = w_start.intval
-        elif isinstance(w_start, W_BigBits):
-          tmp = w_start.bigval
-          if tmp.numdigits() > 1:
-            raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                            rbigint.str(tmp), self.nbits )
-          start = tmp.digit(0)
-        elif type(w_start) is W_LongObject:
-          start = w_start.num.toint()
-        else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #1" )
+        start, stop = _get_slice_range( space, self.nbits, start, stop )
 
-        w_stop = w_index.w_stop
-        stop   = 0
-        if type(w_stop) is W_IntObject:
-          stop = w_stop.intval
-        elif isinstance(w_stop, W_SmallBits):
-          stop = w_stop.intval
-        elif isinstance(w_stop, W_BigBits):
-          tmp = w_stop.bigval
-          if tmp.numdigits() > 1:
-            raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                            rbigint.str(tmp), self.nbits )
-          stop = tmp.digit(0)
-        elif type(w_stop) is W_LongObject:
-          stop = w_stop.num.toint()
-        else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #2" )
-
-        self.check_slice_range( space, start, stop )
         slice_nbits = stop - start
-
         res = (self.intval >> start) & get_int_mask(slice_nbits)
         return W_SmallBits( slice_nbits, res )
 
@@ -352,29 +378,7 @@ class W_SmallBits(W_AbstractBits):
         raise oefmt(space.w_ValueError, "Bits slice cannot have step." )
 
     else:
-      index = 0
-      if   type(w_index) is W_IntObject:
-        index = w_index.intval
-      elif isinstance(w_index, W_SmallBits):
-        index = w_index.intval
-        if index < 0:
-          raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
-      elif isinstance(w_index, W_BigBits):
-        tmp = w_index.bigval
-        if tmp.numdigits() > 1:
-          raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                          rbigint.str(tmp), self.nbits )
-        index = tmp.digit(0)
-      elif type(w_index) is W_LongObject:
-        index = w_index.num.toint()
-        if index < 0:
-          raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
-      else:
-        raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #3" )
-
-      if index >= self.nbits:
-        raise oefmt(space.w_ValueError, "Index [%d] too big for Bits%d", index, self.nbits )
-
+      index = _get_index(space, w_index, self.nbits)
       return W_SmallBits( 1, (self.intval >> index) & 1 )
 
   def descr_setitem(self, space, w_index, w_other):
