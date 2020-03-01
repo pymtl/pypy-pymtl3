@@ -37,14 +37,12 @@ def concat_impl(space, args):
 
     for i in range(num_args):
       arg_w = args_w[i]
-      assert isinstance( arg_w, W_AbstractBits )
+      assert isinstance( arg_w, W_SmallBits )
 
       slice_nbits = arg_w.nbits
       start = stop - slice_nbits
-
       valuemask  = ~(get_int_mask(slice_nbits) << start)
       intval = (intval & valuemask) | (arg_w.intval << start)
-
       stop = start
 
     return W_SmallBits( nbits, intval )
@@ -55,16 +53,14 @@ def concat_impl(space, args):
 
     for i in range(num_args):
       arg_w = args_w[i]
-      assert isinstance( arg_w, W_AbstractBits )
 
-      slice_nbits = arg_w.nbits
-      start = stop - slice_nbits
-
-      if slice_nbits <= SHIFT:
+      if isinstance( arg_w, W_SmallBits ):
+        start = stop - arg_w.nbits
         bigval = setitem_long_int_helper( bigval, arg_w.intval, start, stop )
-      else:
+        stop = start
+      elif isinstance( arg_w, W_BigBits ):
+        start = stop - arg_w.nbits
         bigval = setitem_long_long_helper( bigval, arg_w.bigval, start, stop )
-
         stop = start
 
     return W_BigBits( nbits, bigval )
