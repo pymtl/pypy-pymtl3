@@ -263,19 +263,19 @@ class W_AbstractBits(W_Root):
   def descr_ilshift(self, space, w_other):
     return self._descr_ilshift(space, w_other)
 
-  def descr_copy( self, space ):
+  def descr_copy(self):
     raise NotImplementedError
 
-  def descr_deepcopy( self, space ):
-    raise NotImplementedError
+  def descr_deepcopy(self, w_memo):
+    return self.descr_copy()
 
   def descr_clone( self, space ):
-    raise NotImplementedError
+    return self.descr_copy()
 
   def descr_getitem(self, space, w_index):
     raise NotImplementedError
 
-  def descr_setitem(self, space, w_index, w_value):
+  def descr_setitem(self, space, w_index, w_other):
     raise NotImplementedError
 
 class W_SmallBits(W_AbstractBits):
@@ -288,9 +288,6 @@ class W_SmallBits(W_AbstractBits):
 
   def descr_copy(self):
     return W_SmallBits( self.nbits, self.intval )
-
-  descr_deepcopy = func_with_new_name(descr_copy, 'descr_deepcopy')
-  descr_clone    = func_with_new_name(descr_copy, 'descr_clone')
 
   #-----------------------------------------------------------------------
   # get/setitem
@@ -852,17 +849,17 @@ class W_SmallBits(W_AbstractBits):
 
 class W_SmallBitsWithNext(W_SmallBits):
   __slots__ = ( "nbits", "intval", "next_intval" )
-  _immutable_fields_ = [ "nbits", "intval" ]
+  _immutable_fields_ = [ "nbits" ]
 
   def __init__( self, nbits, intval, next_intval):
     self.nbits  = nbits
     self.intval = intval
     self.next_intval = next_intval
 
-  def descr_setitem(self, space, w_index, w_value):
+  def descr_setitem(self, space, w_index, w_other):
     raise oefmt(space.w_TypeError, "You shouldn't do x[a:b]=y on flip-flop")
 
-  def descr_copy( self ):
+  def descr_copy(self):
     return W_SmallBitsWithNext( self.nbits, self.intval, self.next_intval )
 
   def _descr_ilshift(self, space, w_other):

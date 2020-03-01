@@ -398,6 +398,7 @@ def setitem_long_int_helper( value, other, start, stop ):
 
   # wordstart < vsize <= wordstop, highest bits will be cleared
   newsize = wordstart + 2 #
+  assert wordstart >= 0
   ret = rbigint( value._digits[:wordstart] + \
                 [NULLDIGIT, NULLDIGIT], 1, newsize )
 
@@ -429,9 +430,6 @@ class W_BigBits(W_AbstractBits):
   def descr_copy(self):
     return W_BigBits( self.nbits, self.bigval )
 
-  descr_deepcopy = func_with_new_name(descr_copy, 'descr_deepcopy')
-  descr_clone    = func_with_new_name(descr_copy, 'descr_clone')
-
   #-----------------------------------------------------------------------
   # get/setitem
   #-----------------------------------------------------------------------
@@ -439,6 +437,9 @@ class W_BigBits(W_AbstractBits):
   def descr_getitem(self, space, w_index):
     if type(w_index) is W_SliceObject:
       if space.is_w(w_index.w_step, space.w_None):
+        w_start = w_index.w_start
+        start   = 0
+
         if type(w_start) is W_IntObject:
           start = w_start.intval
         elif isinstance(w_start, W_SmallBits):
@@ -513,6 +514,9 @@ class W_BigBits(W_AbstractBits):
   def descr_setitem(self, space, w_index, w_other):
     if type(w_index) is W_SliceObject:
       if space.is_w(w_index.w_step, space.w_None):
+        w_start = w_index.w_start
+        start   = 0
+
         if type(w_start) is W_IntObject:
           start = w_start.intval
         elif isinstance(w_start, W_SmallBits):
@@ -611,10 +615,7 @@ class W_BigBits(W_AbstractBits):
         if other < 0 or other > 1:
           raise oefmt(space.w_ValueError, "Value %d cannot fit into 1-bit slice", other )
 
-        if self.nbits <= SHIFT:
-          self.intval = (self.intval & ~(1 << index)) | (other << index)
-        else:
-          self.bigval = _rbigint_setidx( self.bigval, index, other )
+        self.bigval = _rbigint_setidx( self.bigval, index, other )
 
       elif isinstance(w_other, W_BigBits):
         raise oefmt(space.w_ValueError, "Bits%d cannot fit into 1-bit slice", w_other.nbits )
@@ -827,7 +828,7 @@ class W_BigBits(W_AbstractBits):
       shamt = w_other.num
       if shamt.numdigits() > 1: return W_BigBits( self.nbits, NULLRBIGINT ) # rare
       shamt = shamt.digit(0)
-      return W_BigBits( self.nbits, 0, _rbigint_lshift_maskoff( x, shamt, self.nbits ) )
+      return W_BigBits( self.nbits, _rbigint_lshift_maskoff( x, shamt, self.nbits ) )
 
     raise oefmt(space.w_TypeError, "Please do lshift between <Bits, Bits/int/long> objects" )
 
@@ -897,11 +898,6 @@ class W_BigBits(W_AbstractBits):
   descr_pos = func_with_new_name( descr_uint, 'descr_pos' )
   descr_index = func_with_new_name( descr_uint, 'descr_index' )
 
-  def descr_long(self, space):
-    if self.nbits <= SHIFT:
-      return wrapint( space, self.intval )
-    return newlong( space, self.bigval )
-
   #-----------------------------------------------------------------------
   # unary ops
   #-----------------------------------------------------------------------
@@ -932,14 +928,14 @@ class W_BigBits(W_AbstractBits):
 
 class W_BigBitsWithNext(W_BigBits):
   __slots__ = ( "nbits", "bigval", "next_bigval" )
-  _immutable_fields_ = [ "nbits", "bigval" ]
+  _immutable_fields_ = [ "nbits" ]
 
   def __init__( self, nbits, bigval, next_bigval ):
     self.nbits  = nbits
     self.bigval = bigval
     self.next_bigval = next_bigval
 
-  def descr_setitem(self, w_index, w_value):
+  def descr_setitem(self, space, w_index, w_other):
     raise oefmt(space.w_TypeError, "You shouldn't do x[a:b]=y on flip-flop")
 
   def descr_copy(self):
