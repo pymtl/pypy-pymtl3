@@ -935,8 +935,8 @@ class W_BigBitsWithNext(W_BigBits):
     self.bigval = bigval
     self.next_bigval = next_bigval
 
-  def descr_setitem(self, space, w_index, w_other):
-    raise oefmt(space.w_TypeError, "You shouldn't do x[a:b]=y on flip-flop")
+  # def descr_setitem(self, space, w_index, w_other):
+    # raise oefmt(space.w_TypeError, "You shouldn't do x[a:b]=y on flip-flop")
 
   def descr_copy(self):
     return W_BigBitsWithNext( self.nbits, self.bigval, self.next_bigval )

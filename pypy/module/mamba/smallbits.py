@@ -126,9 +126,6 @@ class W_AbstractBits(W_Root):
     descr_unaryop.__doc__ = doc
     return descr_unaryop
 
-  descr_repr = _abstract_unaryop('repr')
-  descr_str = _abstract_unaryop('str')
-
   descr_hash = _abstract_unaryop('hash')
   descr_getnewargs = _abstract_unaryop('getnewargs', None)
   descr_float = _abstract_unaryop('float')
@@ -247,6 +244,15 @@ class W_AbstractBits(W_Root):
   check_slice_range._always_inline_ = True
 
   # Bits specific
+
+  def _format16(self, space):
+    raise NotImplementedError
+
+  def descr_repr(self, space):
+    return space.newtext( "Bits%d( 0x%s )" % (self.nbits, self._format16(space)) )
+
+  def descr_str(self, space):
+    return space.newtext( "%s" % (self._format16(space)) )
 
   def descr_get_nbits(self, space):
     return wrapint( space, self.nbits )
@@ -519,12 +525,6 @@ class W_SmallBits(W_AbstractBits):
     w_data = space.newtext( data )
     return space.text_w( w_data.descr_zfill(space, (((self.nbits-1)>>2)+1)) )
 
-  def descr_repr(self, space):
-    return space.newtext( "Bits%d( 0x%s )" % (self.nbits, self._format16(space)) )
-
-  def descr_str(self, space):
-    return space.newtext( "%s" % (self._format16(space)) )
-
   #-----------------------------------------------------------------------
   # comparators
   #-----------------------------------------------------------------------
@@ -769,7 +769,7 @@ class W_SmallBits(W_AbstractBits):
   # <<=
   #-----------------------------------------------------------------------
 
-  def _descr_ilshift(self, space, w_other):
+  def descr_ilshift(self, space, w_other):
     from pypy.module.mamba.bigbits import W_BigBits
 
     if isinstance(w_other, W_SmallBits):
@@ -792,14 +792,8 @@ class W_SmallBits(W_AbstractBits):
     else:
       raise oefmt(space.w_TypeError, "RHS of <<= has to be Bits%d, not '%T'", self.nbits, w_other)
 
-  def descr_ilshift(self, space, w_other):
-    return self._descr_ilshift(space, w_other)
-
-  def _descr_flip(self, space):
-    raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects which has no _next", self)
-
   def descr_flip(self, space):
-    return self._descr_flip(space)
+    raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects which has no _next", self)
 
   #-----------------------------------------------------------------------
   # value access
@@ -856,13 +850,13 @@ class W_SmallBitsWithNext(W_SmallBits):
     self.intval = intval
     self.next_intval = next_intval
 
-  def descr_setitem(self, space, w_index, w_other):
-    raise oefmt(space.w_TypeError, "You shouldn't do x[a:b]=y on flip-flop")
+  # def descr_setitem(self, space, w_index, w_other):
+    # raise oefmt(space.w_TypeError, "You shouldn't do x[a:b]=y on flip-flop")
 
   def descr_copy(self):
     return W_SmallBitsWithNext( self.nbits, self.intval, self.next_intval )
 
-  def _descr_ilshift(self, space, w_other):
+  def descr_ilshift(self, space, w_other):
     from pypy.module.mamba.bigbits import W_BigBits
 
     if isinstance(w_other, W_SmallBits):
@@ -886,26 +880,23 @@ class W_SmallBitsWithNext(W_SmallBits):
 
     return self
 
-  def _descr_flip(self, space):
+  def descr_flip(self, space):
     self.intval = self.next_intval
 
 W_AbstractBits.typedef = TypeDef("Bits",
-    nbits = GetSetProperty(W_AbstractBits.descr_get_nbits),
-
-    uint  = interp2app(W_AbstractBits.descr_uint),
-    int   = interp2app(W_AbstractBits.descr_int),
 
     # Basic operations
     __new__ = interp2app(W_AbstractBits.descr_new),
-    __getitem__ = interpindirect2app(W_AbstractBits.descr_getitem),
-    __setitem__ = interpindirect2app(W_AbstractBits.descr_setitem),
-    __copy__ = interpindirect2app(W_AbstractBits.descr_copy),
+
+    __getitem__  = interpindirect2app(W_AbstractBits.descr_getitem),
+    __setitem__  = interpindirect2app(W_AbstractBits.descr_setitem),
+    __copy__     = interpindirect2app(W_AbstractBits.descr_copy),
     __deepcopy__ = interpindirect2app(W_AbstractBits.descr_deepcopy),
 
     # String formats
-    __hash__  = interpindirect2app(W_AbstractBits.descr_hash),
-    __repr__ = interpindirect2app(W_AbstractBits.descr_repr),
-    __str__  = interpindirect2app(W_AbstractBits.descr_str),
+    __hash__ = interpindirect2app(W_AbstractBits.descr_hash),
+    __repr__ = interp2app(W_AbstractBits.descr_repr),
+    __str__  = interp2app(W_AbstractBits.descr_str),
     __getnewargs__ = interpindirect2app(W_AbstractBits.descr_getnewargs),
 
     # Value access
@@ -968,10 +959,13 @@ W_AbstractBits.typedef = TypeDef("Bits",
     __rpow__      = interpindirect2app(W_AbstractBits.descr_rpow),
 
     # PyMTL3 specific
+    nbits = GetSetProperty(W_AbstractBits.descr_get_nbits),
+    uint  = interpindirect2app(W_AbstractBits.descr_uint),
+    int   = interpindirect2app(W_AbstractBits.descr_int),
+
     # <<=
     __ilshift__ = interpindirect2app(W_AbstractBits.descr_ilshift),
-    _flip = interpindirect2app(W_AbstractBits.descr_flip),
+    _flip = interp2app(W_AbstractBits.descr_flip),
 
-    # clone
     clone = interpindirect2app(W_AbstractBits.descr_clone),
 )
