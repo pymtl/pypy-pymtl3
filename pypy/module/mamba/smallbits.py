@@ -260,6 +260,9 @@ class W_AbstractBits(W_Root):
   def descr_uint(self, space):
     raise NotImplementedError
 
+  def uint(self, space):
+    return self.descr_uint(space)
+
   def descr_int(self, space):
     raise NotImplementedError
 
@@ -960,12 +963,12 @@ W_AbstractBits.typedef = TypeDef("Bits",
 
     # PyMTL3 specific
     nbits = GetSetProperty(W_AbstractBits.descr_get_nbits),
-    uint  = interpindirect2app(W_AbstractBits.descr_uint),
+    uint  = interp2app(W_AbstractBits.uint),
     int   = interpindirect2app(W_AbstractBits.descr_int),
 
     # <<=
     __ilshift__ = interpindirect2app(W_AbstractBits.descr_ilshift),
-    _flip = interp2app(W_AbstractBits.descr_flip),
+    _flip = interpindirect2app(W_AbstractBits.descr_flip),
 
     clone = interpindirect2app(W_AbstractBits.descr_clone),
 )

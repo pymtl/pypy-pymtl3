@@ -7,7 +7,7 @@ from pypy.objspace.std.bytearrayobject import W_BytearrayObject
 from pypy.objspace.std.intobject import W_IntObject
 from pypy.objspace.std.longobject import W_LongObject
 
-from pypy.module.mamba.smallbits import W_SmallBits, get_int_mask
+from pypy.module.mamba.smallbits import W_AbstractBits, W_SmallBits, get_int_mask
 from pypy.module.mamba.bigbits   import W_BigBits, setitem_long_int_helper, setitem_long_long_helper
 
 # @jit.look_inside_iff(lambda space, args_w:
@@ -37,7 +37,7 @@ def concat_impl(space, args):
 
     for i in range(num_args):
       arg_w = args_w[i]
-      assert isinstance( arg_w, W_Bits )
+      assert isinstance( arg_w, W_AbstractBits )
 
       slice_nbits = arg_w.nbits
       start = stop - slice_nbits
@@ -55,7 +55,7 @@ def concat_impl(space, args):
 
     for i in range(num_args):
       arg_w = args_w[i]
-      assert isinstance( arg_w, W_Bits )
+      assert isinstance( arg_w, W_AbstractBits )
 
       slice_nbits = arg_w.nbits
       start = stop - slice_nbits
