@@ -477,7 +477,6 @@ def setitem_long_int_helper( value, other, start, stop ):
 
   # wordstart < vsize <= wordstop, highest bits will be cleared
   newsize = wordstart + 2 #
-  assert wordstart >= 0
   ret = rbigint( value._digits[:wordstart] + \
                 [NULLDIGIT, NULLDIGIT], 1, newsize )
 
@@ -841,15 +840,29 @@ class W_Bits(W_Root):
   # Miscellaneous methods for string format
   #-----------------------------------------------------------------------
 
-  def descr_oct(self, space):
+  def descr_bin_(self, space):
+    if self.nbits <= SHIFT:
+      return space.newtext(bin(self.intval))
+    return space.newtext( rbigint.bin(self.bigval) )
+
+  def descr_oct_(self, space):
     if self.nbits <= SHIFT:
       return space.newtext(oct(self.intval))
     return space.newtext( rbigint.oct(self.bigval) )
 
-  def descr_hex(self, space):
+  def descr_hex_(self, space):
     if self.nbits <= SHIFT:
       return space.newtext(hex(self.intval))
     return space.newtext( rbigint.hex(self.bigval) )
+
+  def descr_bin(self, space):
+    return self.descr_bin_( space )
+
+  def descr_oct(self, space):
+    return self.descr_oct_( space )
+
+  def descr_hex(self, space):
+    return self.descr_hex_( space )
 
   def _format16(self, space):
     if self.nbits <= SHIFT:
@@ -1133,7 +1146,7 @@ class W_Bits(W_Root):
         if big.sign < 0: raise oefmt( space.w_ValueError, "negative shift amount" )
         shamt = big.digit(0)
         if big.numdigits() == 1 and shamt <= SHIFT:
-          W_Bits( self.nbits, x >> shamt )
+          return W_Bits( self.nbits, x >> shamt )
         return W_Bits( self.nbits )
 
     # self.nbits > SHIFT, use bigval
@@ -1382,8 +1395,12 @@ W_Bits.typedef = TypeDef("Bits",
     __deepcopy__ = interpindirect2app(W_Bits.descr_deepcopy),
 
     # String formats
-    __oct__  = interpindirect2app(W_Bits.descr_oct),
-    __hex__  = interpindirect2app(W_Bits.descr_hex),
+    __bin__  = interpindirect2app(W_Bits.descr_bin_),
+    __oct__  = interpindirect2app(W_Bits.descr_oct_),
+    __hex__  = interpindirect2app(W_Bits.descr_hex_),
+    bin      = interpindirect2app(W_Bits.descr_bin),
+    oct      = interpindirect2app(W_Bits.descr_oct),
+    hex      = interpindirect2app(W_Bits.descr_hex),
     __repr__ = interpindirect2app(W_Bits.descr_repr),
     __str__  = interpindirect2app(W_Bits.descr_str),
 
@@ -1399,7 +1416,6 @@ W_Bits.typedef = TypeDef("Bits",
     __int__   = interpindirect2app(W_Bits.descr_uint), # TODO use uint now
     __pos__   = interpindirect2app(W_Bits.descr_pos),
     __index__ = interpindirect2app(W_Bits.descr_index),
-    __long__  = interpindirect2app(W_Bits.descr_long),
 
     # Unary ops
     # __neg__     = interpindirect2app(W_Bits.descr_neg),
