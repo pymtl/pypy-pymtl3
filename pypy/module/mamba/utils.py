@@ -7,7 +7,8 @@ from pypy.objspace.std.bytearrayobject import W_BytearrayObject
 from pypy.objspace.std.intobject import W_IntObject
 from pypy.objspace.std.longobject import W_LongObject
 
-from bits import W_Bits, setitem_long_int_helper, setitem_long_long_helper, get_int_mask
+from pypy.module.mamba.smallbits import W_SmallBits, get_int_mask
+from pypy.module.mamba.bigbits   import W_BigBits, setitem_long_int_helper, setitem_long_long_helper
 
 # @jit.look_inside_iff(lambda space, args_w:
         # jit.loop_unrolling_heuristic(args_w, len(args_w), 3))
@@ -22,7 +23,7 @@ def concat_impl(space, args):
   nbits = 0
   for i in range(num_args):
     arg_w = args_w[i]
-    if isinstance( arg_w, W_Bits ):
+    if isinstance( arg_w, W_AbstractBits ):
       nbits += arg_w.nbits
     else:
       raise oefmt(space.w_TypeError,
@@ -46,7 +47,7 @@ def concat_impl(space, args):
 
       stop = start
 
-    return W_Bits( nbits, intval )
+    return W_SmallBits( nbits, intval )
 
   else:
     # ret > SHIFT-bits, need to have rbigint
@@ -66,7 +67,7 @@ def concat_impl(space, args):
 
         stop = start
 
-    return W_Bits( nbits, 0, bigval )
+    return W_BigBits( nbits, bigval )
 
 def concat(space, __args__):
   """concat( v1, v2, v3, ... )"""
@@ -80,15 +81,14 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
   ba_offset = w_arr._offset
 
   nbytes = 0
-  if   isinstance(w_nbytes, W_Bits):
-    if w_nbytes.nbits <= SHIFT:
-      nbytes = w_nbytes.intval
-    else:
-      tmp = w_nbytes.bigval
-      if tmp.numdigits() > 1:
-        raise oefmt(space.w_ValueError, "nbytes [%s] too big for bytearray read Bits%d",
-                                        rbigint.str(tmp), w_nbytes.nbits )
-      nbytes = tmp.digit(0)
+  if   isinstance(w_nbytes, W_SmallBits):
+    nbytes = w_nbytes.intval
+  elif isinstance(w_nbytes, W_BigBits):
+    tmp = w_nbytes.bigval
+    if tmp.numdigits() > 1:
+      raise oefmt(space.w_ValueError, "nbytes [%s] too big for bytearray read Bits%d",
+                                      rbigint.str(tmp), w_nbytes.nbits )
+    nbytes = tmp.digit(0)
   elif type(w_nbytes) is W_IntObject:
     nbytes = w_nbytes.intval
   elif type(w_nbytes) is W_LongObject:
@@ -97,15 +97,14 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
     raise oefmt(space.w_TypeError, "Please pass in int/Bits" )
 
   addr = 0
-  if   isinstance(w_addr, W_Bits):
-    if w_addr.nbits <= SHIFT:
-      addr = w_addr.intval
-    else:
-      tmp = w_addr.bigval
-      if tmp.numdigits() > 1:
-        raise oefmt(space.w_ValueError, "Index [%s] too big for bytearray read Bits%d",
-                                        rbigint.str(tmp), w_addr.nbits )
-      addr = tmp.digit(0)
+  if   isinstance(w_addr, W_SmallBits):
+    addr = w_addr.intval
+  elif isinstance(w_addr, W_BigBits):
+    tmp = w_addr.bigval
+    if tmp.numdigits() > 1:
+      raise oefmt(space.w_ValueError, "Index [%s] too big for bytearray read Bits%d",
+                                      rbigint.str(tmp), w_addr.nbits )
+    addr = tmp.digit(0)
   elif type(w_addr) is W_IntObject:
     addr = w_addr.intval
   elif type(w_addr) is W_LongObject:
@@ -128,7 +127,7 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
       end -= 1
       intval = (intval << 8) + ord(ba_data[ end ])
 
-    return W_Bits( nbytes<<3, intval )
+    return W_SmallBits( nbytes<<3, intval )
 
   else:
     digits = []
@@ -149,14 +148,14 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
         digits.append(_store_digit(current_word))
 
         current_word = item >> this_nbits
-        bitstart =  8 - this_nbits
+        bitstart = 8 - this_nbits
 
     digits.append(_store_digit(current_word))
 
     bigval = rbigint(digits[:], sign=1) # 1 is positive!!!
     bigval._normalize()
 
-    return W_Bits( nbytes<<3, 0, bigval )
+    return W_BigBits( nbytes<<3, bigval )
 
 def read_bytearray_bits(space, w_arr, w_addr, w_nbytes):
   """read_bytearray_bits( bytearray, addr, nbytes )"""
