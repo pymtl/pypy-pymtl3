@@ -132,7 +132,7 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
     current_word = 0
     bitstart = 0
 
-    while begin < end::
+    while begin < end:
       item = ord(ba_data[begin])
 
       bitend = bitstart + 8
@@ -147,6 +147,8 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
 
         current_word = item >> this_nbits
         bitstart = 8 - this_nbits
+
+      begin += 1
 
     digits.append(_store_digit(current_word))
 
@@ -215,7 +217,7 @@ def write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data ):
 
     intval = w_data.intval
     while begin < end:
-      ba_data[begin] = intval & 255
+      ba_data[begin] = chr(intval & 255)
       intval = intval >> 8
       begin += 1
 
@@ -228,7 +230,7 @@ def write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data ):
     # zero -- clear
     if not bigval.sign:
       while begin < end:
-        ba_data[begin] = 0
+        ba_data[begin] = chr(0)
         begin += 1
       return
 
@@ -241,7 +243,7 @@ def write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data ):
       bitend = curbit + 8
 
       if bitend <= SHIFT:
-        ba_data[begin] = curval & 255
+        ba_data[begin] = chr(curval & 255)
         curval >>= 8
         curbit = bitend
         begin += 1
@@ -249,10 +251,10 @@ def write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data ):
       else:
         curdigit += 1
         if curdigit >= size:
-          ba_data[begin] = curval
+          ba_data[begin] = chr(curval)
           begin += 1
           while begin < end:
-            ba_data[begin] = 0
+            ba_data[begin] = chr(0)
             begin += 1
           return
 
@@ -261,7 +263,7 @@ def write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data ):
 
           this_nbits = SHIFT - curbit
           curval |= (nextval & get_int_mask(bitend)) << this_nbits
-          ba_data[begin] = curval
+          ba_data[begin] = chr(curval)
 
           curval = nextval >> bitend
           begin += 1

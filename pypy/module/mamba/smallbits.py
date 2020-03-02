@@ -611,7 +611,7 @@ class W_SmallBits(W_AbstractBits):
           return W_BigBits( w_other.nbits, liop( w_other.bigval, x ) )
 
         elif type(w_other) is W_LongObject: # TODO Maybe add int_bit_length check?
-          return W_SmallBits( self.nbits, iiop( x, w_other.num.int_and_( get_int_mask(self.nbits) ).digit(0) )
+          return W_SmallBits( self.nbits, iiop( x, w_other.num.int_and_( get_int_mask(self.nbits) ).digit(0) ) )
 
       raise oefmt(space.w_TypeError, "Please do %s between Bits and Bits/int/long objects", opname)
 
