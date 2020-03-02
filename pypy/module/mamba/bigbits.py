@@ -8,7 +8,8 @@ from rpython.rlib.rbigint     import rbigint, SHIFT, NULLDIGIT, ONERBIGINT, \
 from rpython.tool.sourcetools import func_renamer, func_with_new_name
 
 from pypy.module.mamba.smallbits import W_AbstractBits, W_SmallBits, int_bit_length, \
-                                        get_long_mask, get_int_mask, _rbigint_maskoff_high, cmp_opp
+                                        get_long_mask, get_int_mask, _rbigint_maskoff_high, cmp_opp, \
+                                        _get_index, _get_slice_range
 from pypy.interpreter.baseobjspace import W_Root
 from pypy.interpreter.gateway import WrappedDefault, interp2app, interpindirect2app, unwrap_spec
 from pypy.interpreter.error import OperationError, oefmt
@@ -437,119 +438,26 @@ class W_BigBits(W_AbstractBits):
   def descr_getitem(self, space, w_index):
     if type(w_index) is W_SliceObject:
       if space.is_w(w_index.w_step, space.w_None):
-        w_start = w_index.w_start
-        start   = 0
-
-        if type(w_start) is W_IntObject:
-          start = w_start.intval
-        elif isinstance(w_start, W_SmallBits):
-          start = w_start.intval
-        elif isinstance(w_start, W_BigBits):
-          tmp = w_start.bigval
-          if tmp.numdigits() > 1:
-            raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                            rbigint.str(tmp), self.nbits )
-          start = tmp.digit(0)
-        elif type(w_start) is W_LongObject:
-          start = w_start.num.toint()
-        else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #1" )
-
-        w_stop = w_index.w_stop
-        stop   = 0
-        if type(w_stop) is W_IntObject:
-          stop = w_stop.intval
-        elif isinstance(w_stop, W_SmallBits):
-          stop = w_stop.intval
-        elif isinstance(w_stop, W_BigBits):
-          tmp = w_stop.bigval
-          if tmp.numdigits() > 1:
-            raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                            rbigint.str(tmp), self.nbits )
-          stop = tmp.digit(0)
-        elif type(w_stop) is W_LongObject:
-          stop = w_stop.num.toint()
-        else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #2" )
-
-        self.check_slice_range( space, start, stop )
+        start, stop = _get_slice_range( space, self.nbits, w_index.w_start, w_index.w_stop )
 
         slice_nbits = stop - start
         if slice_nbits <= SHIFT:
-          res = _rbigint_rshift_maskoff_retint( self.bigval, start, slice_nbits )
-          return W_SmallBits( slice_nbits, res )
+          return W_SmallBits( slice_nbits, _rbigint_rshift_maskoff_retint( self.bigval, start, slice_nbits ) )
         else:
-          res = _rbigint_rshift_maskoff( self.bigval, start, slice_nbits )
-          return W_BigBits( slice_nbits, res )
+          return W_BigBits( slice_nbits, _rbigint_rshift_maskoff( self.bigval, start, slice_nbits ) )
 
       else:
         raise oefmt(space.w_ValueError, "Bits slice cannot have step." )
 
     else:
-      index = 0
-      if   type(w_index) is W_IntObject:
-        index = w_index.intval
-      elif isinstance(w_index, W_SmallBits):
-        index = w_index.intval
-        if index < 0:
-          raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
-      elif isinstance(w_index, W_BigBits):
-        tmp = w_index.bigval
-        if tmp.numdigits() > 1:
-          raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                          rbigint.str(tmp), self.nbits )
-        index = tmp.digit(0)
-      elif type(w_index) is W_LongObject:
-        index = w_index.num.toint()
-        if index < 0:
-          raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
-      else:
-        raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #3" )
-
-      if index >= self.nbits:
-        raise oefmt(space.w_ValueError, "Index [%d] too big for Bits%d", index, self.nbits )
-
+      index = _get_index(space, self.nbits, w_index)
       return W_SmallBits( 1, _rbigint_getidx( self.bigval, index ) )
 
   def descr_setitem(self, space, w_index, w_other):
     if type(w_index) is W_SliceObject:
       if space.is_w(w_index.w_step, space.w_None):
-        w_start = w_index.w_start
-        start   = 0
+        start, stop = _get_slice_range( space, self.nbits, w_index.w_start, w_index.w_stop )
 
-        if type(w_start) is W_IntObject:
-          start = w_start.intval
-        elif isinstance(w_start, W_SmallBits):
-          start = w_start.intval
-        elif isinstance(w_start, W_BigBits):
-          tmp = w_start.bigval
-          if tmp.numdigits() > 1:
-            raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                            rbigint.str(tmp), self.nbits )
-          start = tmp.digit(0)
-        elif type(w_start) is W_LongObject:
-          start = w_start.num.toint()
-        else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #1" )
-
-        w_stop = w_index.w_stop
-        stop   = 0
-        if type(w_stop) is W_IntObject:
-          stop = w_stop.intval
-        elif isinstance(w_stop, W_SmallBits):
-          stop = w_stop.intval
-        elif isinstance(w_stop, W_BigBits):
-          tmp = w_stop.bigval
-          if tmp.numdigits() > 1:
-            raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                            rbigint.str(tmp), self.nbits )
-          stop = tmp.digit(0)
-        elif type(w_stop) is W_LongObject:
-          stop = w_stop.num.toint()
-        else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #2" )
-
-        self.check_slice_range( space, start, stop )
         slice_nbits = stop - start
 
         if isinstance(w_other, W_SmallBits):
@@ -581,25 +489,7 @@ class W_BigBits(W_AbstractBits):
         raise oefmt(space.w_ValueError, "Bits slice cannot have step." )
 
     else:
-      index = 0
-      if   type(w_index) is W_IntObject:
-        index = w_index.intval
-      elif isinstance(w_index, W_SmallBits):
-        index = w_index.intval
-        if index < 0:
-          raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
-      elif isinstance(w_index, W_BigBits):
-        tmp = w_index.bigval
-        if tmp.numdigits() > 1:
-          raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                          rbigint.str(tmp), self.nbits )
-        index = tmp.digit(0)
-      elif type(w_index) is W_LongObject:
-        index = w_index.num.toint()
-        if index < 0:
-          raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
-      else:
-        raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #3" )
+      index = _get_index(space, self.nbits, w_index)
 
       # Check value bitlen. No need to check Bits, but check int/long.
       if isinstance(w_other, W_SmallBits):
@@ -653,10 +543,8 @@ class W_BigBits(W_AbstractBits):
   #-----------------------------------------------------------------------
 
   def _make_descr_cmp(opname):
-    iiop = getattr( operator, opname )
     llop = getattr( rbigint , opname )
     liop = getattr( rbigint , "int_"+opname )
-    ilopp = getattr( rbigint , "int_"+cmp_opp[opname] )
 
     @func_renamer('descr_' + opname)
     def descr_cmp(self, space, w_other):
@@ -700,7 +588,6 @@ class W_BigBits(W_AbstractBits):
     _opn = opname + ('_' if opname in ('and', 'or') else '')
     llop = getattr( rbigint, _opn )
     liop = getattr( rbigint, "int_"+_opn )
-    iiop = getattr( operator, _opn )
 
     @func_renamer('descr_' + opname)
     def descr_binop(self, space, w_other):
@@ -764,8 +651,6 @@ class W_BigBits(W_AbstractBits):
   # Special rsub ..
   def descr_rsub( self, space, w_other ):
     llop = getattr( rbigint, "sub" )
-    liop = getattr( rbigint, "int_sub" )
-    iiop = getattr( operator, "sub" )
 
     y = self.bigval
     if isinstance(w_other, W_IntObject):
@@ -803,9 +688,6 @@ class W_BigBits(W_AbstractBits):
       return W_BigBits( self.nbits, _rbigint_rshift( x, w_other.num ) )
 
     raise oefmt(space.w_TypeError, "Please do rshift between <Bits, Bits/int/long> objects" )
-
-  def descr_rrshift(self, space, w_other): # int >> bits, what is nbits??
-    raise oefmt(space.w_TypeError, "rrshift not implemented" )
 
   def descr_lshift(self, space, w_other):
 
@@ -853,14 +735,8 @@ class W_BigBits(W_AbstractBits):
     else:
       raise oefmt(space.w_TypeError, "RHS of <<= has to be Bits%d, not '%T'", self.nbits, w_other)
 
-  def descr_ilshift(self, space, w_other):
-    return self._descr_ilshift(space, w_other)
-
   def _descr_flip(self, space):
     raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects which has no _next", self)
-
-  def descr_flip(self, space):
-    return self._descr_flip(space)
 
   #-----------------------------------------------------------------------
   # value access

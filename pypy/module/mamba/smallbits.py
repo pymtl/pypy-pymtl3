@@ -81,40 +81,44 @@ def _rbigint_maskoff_high( value, masklen ):
   return ret
 
 def _get_slice_range(space, nbits, w_start, w_stop):
-  w_start = w_index.w_start
-  start   = 0
+  from pypy.module.mamba.bigbits import W_BigBits
+  start = 0
 
-  if type(w_start) is W_IntObject:
-    start = w_start.intval
-  elif isinstance(w_start, W_SmallBits):
-    start = w_start.intval
+  if type(w_start) is W_IntObject:       start = w_start.intval
+  elif isinstance(w_start, W_SmallBits): start = w_start.intval
   elif isinstance(w_start, W_BigBits):
-    tmp = w_start.bigval
-    if tmp.numdigits() > 1:
+    try:
+      start = w_start.bigval.toint()
+    except OverflowError:
       raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                      rbigint.str(tmp), nbits )
-    start = tmp.digit(0)
-  elif type(w_start) is W_LongObject:
-    start = w_start.num.toint()
-  else:
-    raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #1" )
+                                      rbigint.str(w_start.bigval), nbits )
 
-  w_stop = w_index.w_stop
-  stop   = 0
-  if type(w_stop) is W_IntObject:
-    stop = w_stop.intval
-  elif isinstance(w_stop, W_SmallBits):
-    stop = w_stop.intval
-  elif isinstance(w_stop, W_BigBits):
-    tmp = w_stop.bigval
-    if tmp.numdigits() > 1:
+  elif type(w_start) is W_LongObject:
+    try:
+      start = w_start.num.toint()
+    except OverflowError:
       raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                      rbigint.str(tmp), nbits )
-    stop = tmp.digit(0)
-  elif type(w_stop) is W_LongObject:
-    stop = w_stop.num.toint()
+                                      rbigint.str(w_start.num), nbits )
   else:
-    raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #2" )
+    raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for slice's start." )
+
+  stop = 0
+  if type(w_stop) is W_IntObject:       stop = w_stop.intval
+  elif isinstance(w_stop, W_SmallBits): stop = w_stop.intval
+  elif isinstance(w_stop, W_BigBits):
+    try:
+      stop = w_stop.bigval.toint()
+    except OverflowError:
+      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
+                                      rbigint.str(w_stop.bigval), nbits )
+  elif type(w_stop) is W_LongObject:
+    try:
+      stop = w_stop.num.toint()
+    except OverflowError:
+      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
+                                      rbigint.str(w_stop.num), nbits )
+  else:
+    raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for slice's stop." )
 
   if start >= stop:
     raise oefmt(space.w_ValueError, "Invalid range: start [%d] >= stop [%d]", start, stop )
@@ -126,26 +130,29 @@ def _get_slice_range(space, nbits, w_start, w_stop):
   return start, stop
 
 def _get_index(space, nbits, w_index):
+  from pypy.module.mamba.bigbits import W_BigBits
   index = 0
-  if   type(w_index) is W_IntObject:
+  if isinstance(w_index, W_SmallBits):
     index = w_index.intval
-  elif isinstance(w_index, W_SmallBits):
+  elif type(w_index) is W_IntObject:
     index = w_index.intval
-    if index < 0:
-      raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
   elif isinstance(w_index, W_BigBits):
-    tmp = w_index.bigval
-    if tmp.numdigits() > 1:
+    try:
+      index = w_index.bigval.toint()
+    except OverflowError:
       raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                      rbigint.str(tmp), nbits )
-    index = tmp.digit(0)
+                                      rbigint.str(w_index.bigval), nbits )
   elif type(w_index) is W_LongObject:
-    index = w_index.num.toint()
-    if index < 0:
-      raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
+    try:
+      index = w_index.num.toint()
+    except OverflowError:
+      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
+                                      rbigint.str(w_index.num), nbits )
   else:
-    raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- getitem #3" )
+    raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for slice index" )
 
+  if index < 0:
+    raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
   if index >= nbits:
     raise oefmt(space.w_ValueError, "Index [%d] too big for Bits%d", index, nbits )
   return index
@@ -246,16 +253,16 @@ class W_AbstractBits(W_Root):
   descr_lshift, descr_rlshift = _abstract_binop('lshift')
   descr_rshift, descr_rrshift = _abstract_binop('rshift')
 
-  descr_floordiv, descr_rfloordiv = _abstract_binop('floordiv')
-  descr_truediv, descr_rtruediv = _abstract_binop('truediv')
-  descr_mod, descr_rmod = _abstract_binop('mod')
-  descr_divmod, descr_rdivmod = _abstract_binop('divmod')
+  # descr_floordiv, descr_rfloordiv = _abstract_binop('floordiv')
+  # descr_truediv, descr_rtruediv = _abstract_binop('truediv')
+  # descr_mod, descr_rmod = _abstract_binop('mod')
+  # descr_divmod, descr_rdivmod = _abstract_binop('divmod')
 
-  def descr_pow(self, space, w_exponent, w_modulus=None):
-    """x.__pow__(y[, z]) <==> pow(x, y[, z])"""
-    raise NotImplementedError
-  descr_rpow = func_with_new_name(descr_pow, 'descr_rpow')
-  descr_rpow.__doc__ = "y.__rpow__(x[, z]) <==> pow(x, y[, z])"
+  # def descr_pow(self, space, w_exponent, w_modulus=None):
+    # """x.__pow__(y[, z]) <==> pow(x, y[, z])"""
+    # raise NotImplementedError
+  # descr_rpow = func_with_new_name(descr_pow, 'descr_rpow')
+  # descr_rpow.__doc__ = "y.__rpow__(x[, z]) <==> pow(x, y[, z])"
 
   # value can be negative! Be extremely cautious with _rb_maskoff_high
   @staticmethod
@@ -326,7 +333,13 @@ class W_AbstractBits(W_Root):
   def descr_int(self, space):
     raise NotImplementedError
 
+  def _descr_flip(self, space):
+    raise NotImplementedError
+
   def descr_flip(self, space):
+    self._descr_flip(space)
+
+  def _descr_ilshift(self, space, w_other):
     raise NotImplementedError
 
   def descr_ilshift(self, space, w_other):
@@ -363,12 +376,11 @@ class W_SmallBits(W_AbstractBits):
   #-----------------------------------------------------------------------
 
   def descr_getitem(self, space, w_index):
-    from pypy.module.mamba.bigbits import W_BigBits
 
     if type(w_index) is W_SliceObject:
       if space.is_w(w_index.w_step, space.w_None):
 
-        start, stop = _get_slice_range( space, self.nbits, start, stop )
+        start, stop = _get_slice_range( space, self.nbits, w_index.w_start, w_index.w_stop )
 
         slice_nbits = stop - start
         res = (self.intval >> start) & get_int_mask(slice_nbits)
@@ -378,7 +390,7 @@ class W_SmallBits(W_AbstractBits):
         raise oefmt(space.w_ValueError, "Bits slice cannot have step." )
 
     else:
-      index = _get_index(space, w_index, self.nbits)
+      index = _get_index(space, self.nbits, w_index)
       return W_SmallBits( 1, (self.intval >> index) & 1 )
 
   def descr_setitem(self, space, w_index, w_other):
@@ -386,42 +398,9 @@ class W_SmallBits(W_AbstractBits):
 
     if type(w_index) is W_SliceObject:
       if space.is_w(w_index.w_step, space.w_None):
-        w_start = w_index.w_start
-        start   = 0
 
-        if type(w_start) is W_IntObject:
-          start = w_start.intval
-        elif isinstance(w_start, W_SmallBits):
-          start = w_start.intval
-        elif isinstance(w_start, W_BigBits):
-          tmp = w_start.bigval
-          if tmp.numdigits() > 1:
-            raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                            rbigint.str(tmp), self.nbits )
-          start = tmp.digit(0)
-        elif type(w_start) is W_LongObject:
-          start = w_start.num.toint()
-        else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- setitem #1" )
+        start, stop = _get_slice_range( space, self.nbits, w_index.w_start, w_index.w_stop )
 
-        w_stop = w_index.w_stop
-        stop   = 0
-        if type(w_stop) is W_IntObject:
-          stop = w_stop.intval
-        elif isinstance(w_stop, W_SmallBits):
-          stop = w_stop.intval
-        elif isinstance(w_stop, W_BigBits):
-          tmp = w_stop.bigval
-          if tmp.numdigits() > 1:
-            raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                            rbigint.str(tmp), self.nbits )
-          stop = tmp.digit(0)
-        elif type(w_stop) is W_LongObject:
-          stop = w_stop.num.toint()
-        else:
-          raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- setitem #2" )
-
-        self.check_slice_range( space, start, stop )
         slice_nbits = stop - start
 
         # Check value bitlen. No need to check Bits, but check int/long.
@@ -464,28 +443,7 @@ class W_SmallBits(W_AbstractBits):
         raise oefmt(space.w_ValueError, "Bits slice cannot have step." )
 
     else:
-      index = 0
-      if   type(w_index) is W_IntObject:
-        index = w_index.intval
-      elif isinstance(w_index, W_SmallBits):
-        index = w_index.intval
-        if index < 0:
-          raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
-      elif isinstance(w_index, W_BigBits):
-        tmp = w_index.bigval
-        if tmp.numdigits() > 1:
-          raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                          rbigint.str(tmp), self.nbits )
-        index = tmp.digit(0)
-      elif type(w_index) is W_LongObject:
-        index = w_index.num.toint()
-        if index < 0:
-          raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
-      else:
-        raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for the slice. -- setitem #3" )
-
-      if index >= self.nbits:
-        raise oefmt(space.w_ValueError, "Index [%d] too big for Bits%d", index, self.nbits )
+      index = _get_index(space, self.nbits, w_index)
 
       # Check value bitlen. No need to check Bits, but check int/long.
       if isinstance(w_other, W_SmallBits):
@@ -537,9 +495,7 @@ class W_SmallBits(W_AbstractBits):
   #-----------------------------------------------------------------------
 
   def _make_descr_cmp(opname):
-    iiop = getattr( operator, opname )
-    llop = getattr( rbigint , opname )
-    liop = getattr( rbigint , "int_"+opname )
+    iiop  = getattr( operator, opname )
     ilopp = getattr( rbigint , "int_"+cmp_opp[opname] )
 
     @func_renamer('descr_' + opname)
@@ -649,13 +605,13 @@ class W_SmallBits(W_AbstractBits):
           return W_SmallBits( max(self.nbits, w_other.nbits), iiop( x, w_other.intval ) )
 
         elif isinstance(w_other, W_IntObject): # TODO Maybe add int_bit_length check?
-          return W_SmallBits( self.nbits, iiop( x, w_other.intval ) )
+          return W_SmallBits( self.nbits, iiop( x, w_other.intval & get_int_mask(self.nbits) ) )
 
         elif isinstance(w_other, W_BigBits):
           return W_BigBits( w_other.nbits, liop( w_other.bigval, x ) )
 
         elif type(w_other) is W_LongObject: # TODO Maybe add int_bit_length check?
-          return W_BigBits( self.nbits, liop( w_other.num, x ) )
+          return W_SmallBits( self.nbits, iiop( x, w_other.num.int_and_( get_int_mask(self.nbits) ).digit(0) )
 
       raise oefmt(space.w_TypeError, "Please do %s between Bits and Bits/int/long objects", opname)
 
@@ -673,7 +629,6 @@ class W_SmallBits(W_AbstractBits):
 
   # Special rsub ..
   def descr_rsub( self, space, w_other ):
-    llop = getattr( rbigint, "sub" )
     liop = getattr( rbigint, "int_sub" )
     iiop = getattr( operator, "sub" )
 
@@ -733,9 +688,6 @@ class W_SmallBits(W_AbstractBits):
 
     raise oefmt(space.w_TypeError, "Please do rshift between <Bits, Bits/int/long> objects" )
 
-  def descr_rrshift(self, space, w_other): # int >> bits, what is nbits??
-    raise oefmt(space.w_TypeError, "rrshift not implemented" )
-
   def descr_lshift(self, space, w_other):
     from pypy.module.mamba.bigbits import W_BigBits
 
@@ -776,7 +728,7 @@ class W_SmallBits(W_AbstractBits):
   # <<=
   #-----------------------------------------------------------------------
 
-  def descr_ilshift(self, space, w_other):
+  def _descr_ilshift(self, space, w_other):
     from pypy.module.mamba.bigbits import W_BigBits
 
     if isinstance(w_other, W_SmallBits):
@@ -799,7 +751,7 @@ class W_SmallBits(W_AbstractBits):
     else:
       raise oefmt(space.w_TypeError, "RHS of <<= has to be Bits%d, not '%T'", self.nbits, w_other)
 
-  def descr_flip(self, space):
+  def _descr_flip(self, space):
     raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects which has no _next", self)
 
   #-----------------------------------------------------------------------
@@ -863,7 +815,7 @@ class W_SmallBitsWithNext(W_SmallBits):
   def descr_copy(self):
     return W_SmallBitsWithNext( self.nbits, self.intval, self.next_intval )
 
-  def descr_ilshift(self, space, w_other):
+  def _descr_ilshift(self, space, w_other):
     from pypy.module.mamba.bigbits import W_BigBits
 
     if isinstance(w_other, W_SmallBits):
@@ -887,7 +839,7 @@ class W_SmallBitsWithNext(W_SmallBits):
 
     return self
 
-  def descr_flip(self, space):
+  def _descr_flip(self, space):
     self.intval = self.next_intval
 
 W_AbstractBits.typedef = TypeDef("Bits",
@@ -898,7 +850,7 @@ W_AbstractBits.typedef = TypeDef("Bits",
     __getitem__  = interpindirect2app(W_AbstractBits.descr_getitem),
     __setitem__  = interpindirect2app(W_AbstractBits.descr_setitem),
     __copy__     = interpindirect2app(W_AbstractBits.descr_copy),
-    __deepcopy__ = interpindirect2app(W_AbstractBits.descr_deepcopy),
+    __deepcopy__ = interp2app(W_AbstractBits.descr_deepcopy),
 
     # String formats
     __hash__ = interpindirect2app(W_AbstractBits.descr_hash),
@@ -950,20 +902,20 @@ W_AbstractBits.typedef = TypeDef("Bits",
     __lshift__  = interpindirect2app(W_AbstractBits.descr_lshift),
     __rlshift__ = interpindirect2app(W_AbstractBits.descr_rlshift),
     __rshift__  = interpindirect2app(W_AbstractBits.descr_rshift),
-    __rrshift__ = interpindirect2app(W_AbstractBits.descr_rrshift),
+    __rrshift__ = interp2app(W_AbstractBits.descr_rrshift),
 
     # Binary slow arith ops
-    __floordiv__  = interpindirect2app(W_AbstractBits.descr_floordiv),
-    __rfloordiv__ = interpindirect2app(W_AbstractBits.descr_rfloordiv),
-    __truediv__   = interpindirect2app(W_AbstractBits.descr_truediv),
-    __rtruediv__  = interpindirect2app(W_AbstractBits.descr_rtruediv),
-    __mod__       = interpindirect2app(W_AbstractBits.descr_mod),
-    __rmod__      = interpindirect2app(W_AbstractBits.descr_rmod),
-    __divmod__    = interpindirect2app(W_AbstractBits.descr_divmod),
-    __rdivmod__   = interpindirect2app(W_AbstractBits.descr_rdivmod),
+    # __floordiv__  = interp2app(W_AbstractBits.descr_floordiv),
+    # __rfloordiv__ = interp2app(W_AbstractBits.descr_rfloordiv),
+    # __truediv__   = interp2app(W_AbstractBits.descr_truediv),
+    # __rtruediv__  = interp2app(W_AbstractBits.descr_rtruediv),
+    # __mod__       = interp2app(W_AbstractBits.descr_mod),
+    # __rmod__      = interp2app(W_AbstractBits.descr_rmod),
+    # __divmod__    = interp2app(W_AbstractBits.descr_divmod),
+    # __rdivmod__   = interp2app(W_AbstractBits.descr_rdivmod),
 
-    __pow__       = interpindirect2app(W_AbstractBits.descr_pow),
-    __rpow__      = interpindirect2app(W_AbstractBits.descr_rpow),
+    # __pow__       = interp2app(W_AbstractBits.descr_pow),
+    # __rpow__      = interp2app(W_AbstractBits.descr_rpow),
 
     # PyMTL3 specific
     nbits = GetSetProperty(W_AbstractBits.descr_get_nbits),
@@ -971,8 +923,8 @@ W_AbstractBits.typedef = TypeDef("Bits",
     int   = interpindirect2app(W_AbstractBits.descr_int),
 
     # <<=
-    __ilshift__ = interpindirect2app(W_AbstractBits.descr_ilshift),
-    _flip = interpindirect2app(W_AbstractBits.descr_flip),
+    __ilshift__ = interp2app(W_AbstractBits.descr_ilshift),
+    _flip = interp2app(W_AbstractBits.descr_flip),
 
-    clone = interpindirect2app(W_AbstractBits.descr_clone),
+    clone = interp2app(W_AbstractBits.descr_clone),
 )
