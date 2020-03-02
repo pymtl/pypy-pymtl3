@@ -103,14 +103,15 @@ def _rbigint_rshift_maskoff_retint( value, shamt, masklen ):
   oldsize   = value.numdigits()
   if oldsize <= wordshift:  return 0
 
-  newsize = oldsize - wordshift
   loshift = shamt - wordshift*SHIFT
   hishift = SHIFT - loshift
   ret = value.digit(wordshift) >> loshift
-  if newsize > 1:
-    ret |= value.digit(wordshift+1) << hishift
-  ret &= get_int_mask(masklen)
-  return ret
+
+  wordshift += 1
+  if wordshift < oldsize:
+    ret |= value.digit(wordshift) << hishift
+
+  return ret & get_int_mask(masklen)
 
 _rbigint_rshift_maskoff_retint._always_inline_ = True
 

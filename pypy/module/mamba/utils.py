@@ -69,6 +69,8 @@ def concat(space, __args__):
   """concat( v1, v2, v3, ... )"""
   return concat_impl( space, __args__ )
 
+# read_bytearray_bits
+
 def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
   # We directly manipulate bytearray here
   assert isinstance( w_arr, W_BytearrayObject )
@@ -79,14 +81,14 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
   nbytes = 0
   if   isinstance(w_nbytes, W_SmallBits):
     nbytes = w_nbytes.intval
+  elif type(w_nbytes) is W_IntObject:
+    nbytes = w_nbytes.intval
   elif isinstance(w_nbytes, W_BigBits):
     tmp = w_nbytes.bigval
     if tmp.numdigits() > 1:
       raise oefmt(space.w_ValueError, "nbytes [%s] too big for bytearray read Bits%d",
                                       rbigint.str(tmp), w_nbytes.nbits )
     nbytes = tmp.digit(0)
-  elif type(w_nbytes) is W_IntObject:
-    nbytes = w_nbytes.intval
   elif type(w_nbytes) is W_LongObject:
     nbytes = w_nbytes.num.toint()
   else:
@@ -95,21 +97,21 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
   addr = 0
   if   isinstance(w_addr, W_SmallBits):
     addr = w_addr.intval
+  elif type(w_addr) is W_IntObject:
+    addr = w_addr.intval
   elif isinstance(w_addr, W_BigBits):
     tmp = w_addr.bigval
     if tmp.numdigits() > 1:
       raise oefmt(space.w_ValueError, "Index [%s] too big for bytearray read Bits%d",
                                       rbigint.str(tmp), w_addr.nbits )
     addr = tmp.digit(0)
-  elif type(w_addr) is W_IntObject:
-    addr = w_addr.intval
   elif type(w_addr) is W_LongObject:
     addr = w_addr.num.toint()
   else:
     raise oefmt(space.w_TypeError, "Please pass in int/Bits" )
 
   if addr < 0:
-    raise oefmt(space.w_ValueError, "read_bytearray_bits_impl only accept positive addr.")
+    raise oefmt(space.w_ValueError, "read_bytearray_bits only accept positive addr.")
 
   begin = addr + ba_offset
   end   = begin + nbytes
@@ -130,8 +132,8 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
     current_word = 0
     bitstart = 0
 
-    for i in range(begin, end):
-      item = ord(ba_data[i])
+    while begin < end::
+      item = ord(ba_data[begin])
 
       bitend = bitstart + 8
 
@@ -156,3 +158,117 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
 def read_bytearray_bits(space, w_arr, w_addr, w_nbytes):
   """read_bytearray_bits( bytearray, addr, nbytes )"""
   return read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes )
+
+# write_bytearray_bits
+
+def write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data ):
+  # We directly manipulate bytearray here
+  assert isinstance( w_arr, W_BytearrayObject )
+  ba_data   = w_arr._data
+  ba_len    = len(ba_data)
+  ba_offset = w_arr._offset
+
+  nbytes = 0
+  if   isinstance(w_nbytes, W_SmallBits):
+    nbytes = w_nbytes.intval
+  elif type(w_nbytes) is W_IntObject:
+    nbytes = w_nbytes.intval
+  elif isinstance(w_nbytes, W_BigBits):
+    tmp = w_nbytes.bigval
+    if tmp.numdigits() > 1:
+      raise oefmt(space.w_ValueError, "nbytes [%s] too big for bytearray write Bits%d",
+                                      rbigint.str(tmp), w_nbytes.nbits )
+    nbytes = tmp.digit(0)
+  elif type(w_nbytes) is W_LongObject:
+    nbytes = w_nbytes.num.toint()
+  else:
+    raise oefmt(space.w_TypeError, "Please pass in int/Bits" )
+
+  addr = 0
+  if   isinstance(w_addr, W_SmallBits):
+    addr = w_addr.intval
+  elif type(w_addr) is W_IntObject:
+    addr = w_addr.intval
+  elif isinstance(w_addr, W_BigBits):
+    tmp = w_addr.bigval
+    if tmp.numdigits() > 1:
+      raise oefmt(space.w_ValueError, "Index [%s] too big for bytearray write Bits%d",
+                                      rbigint.str(tmp), w_addr.nbits )
+    addr = tmp.digit(0)
+  elif type(w_addr) is W_LongObject:
+    addr = w_addr.num.toint()
+  else:
+    raise oefmt(space.w_TypeError, "Please pass in int/Bits" )
+
+  if addr < 0:
+    raise oefmt(space.w_ValueError, "write_bytearray_bits only accept positive addr.")
+
+  begin = addr + ba_offset
+  end   = begin + nbytes
+
+  if end > ba_len:
+    raise OperationError(space.w_IndexError, space.newtext("bytearray index out of range"))
+
+  if isinstance(w_data, W_SmallBits):
+    if w_data.nbits > (nbytes << 3):
+      raise oefmt(space.w_ValueError, "The value to write is Bits%d which is wider than the requested %d bytes.")
+
+    intval = w_data.intval
+    while begin < end:
+      ba_data[begin] = intval & 255
+      intval = intval >> 8
+      begin += 1
+
+  elif isinstance(w_data, W_BigBits):
+    if w_data.nbits > (nbytes << 3):
+      raise oefmt(space.w_ValueError, "The value to write is Bits%d which is wider than the requested %d bytes.")
+
+    bigval = w_data.bigval
+
+    # zero -- clear
+    if not bigval.sign:
+      while begin < end:
+        ba_data[begin] = 0
+        begin += 1
+      return
+
+    # not zero
+    size   = bigval.numdigits()
+    curval = bigval.digit(0)
+    curbit = curdigit = 0
+
+    while begin < end:
+      bitend = curbit + 8
+
+      if bitend <= SHIFT:
+        ba_data[begin] = curval & 255
+        curval >>= 8
+        curbit = bitend
+        begin += 1
+
+      else:
+        curdigit += 1
+        if curdigit >= size:
+          ba_data[begin] = curval
+          begin += 1
+          while begin < end:
+            ba_data[begin] = 0
+            begin += 1
+          return
+
+        else:
+          nextval = bigval.digit(curdigit)
+
+          this_nbits = SHIFT - curbit
+          curval |= (nextval & get_int_mask(bitend)) << this_nbits
+          ba_data[begin] = curval
+
+          curval = nextval >> bitend
+          begin += 1
+
+  else:
+    raise oefmt(space.w_ValueError, "write_bytearray_bits only accepts Bits as data")
+
+def write_bytearray_bits(space, w_arr, w_addr, w_nbytes, w_data):
+  """write_bytearray_bits( bytearray, addr, nbytes )"""
+  return write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data )
