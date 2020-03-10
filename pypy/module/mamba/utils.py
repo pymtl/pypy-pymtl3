@@ -30,9 +30,10 @@ def concat_impl(space, args):
                   "%d-th argument is of wrong type. Concat only takes Bits objects.",
                   i)
 
+  stop = nbits
+
   if nbits <= SHIFT: # arg_w.nbits must <= SHIFT
     intval = 0
-    stop = nbits
 
     for i in range(num_args):
       arg_w = args_w[i]
@@ -48,14 +49,10 @@ def concat_impl(space, args):
 
   else:
     # ret > SHIFT-bits, need to have rbigint
-    digits = []
-    cursize = 0
-    curword = 0
-    curbit  = 0
+    bigval = rbigint.fromint(0)
 
     for i in range(num_args):
       arg_w = args_w[i]
-      curbit =
 
       if isinstance( arg_w, W_SmallBits ):
         start = stop - arg_w.nbits
@@ -63,73 +60,7 @@ def concat_impl(space, args):
         stop = start
       elif isinstance( arg_w, W_BigBits ):
         start = stop - arg_w.nbits
-
-        # setitem_long_long_helper
-        other = arg_w.bigval
-
-  if other.numdigits() <= 1:
-    return setitem_long_int_helper( value, other.digit(0), start, stop )
-
-  vsize = value.numdigits()
-  other = other.lshift( start ) # lshift first to align two rbigints
-  osize = other.numdigits()
-
-  # Now other must be long, wordstart must < wordstop
-  wordstart = start / SHIFT
-
-  # vsize <= wordstart < wordstop, concatenate
-  if wordstart >= vsize:
-    return rbigint(value._digits[:vsize] + other._digits[vsize:], 1, osize )
-
-  wordstop = stop / SHIFT # wordstop >= osize-1
-  # (wordstart <) wordstop < vsize
-  if wordstop < vsize:
-    ret = rbigint( value._digits[:vsize], 1, vsize )
-
-    # do start
-    bitstart = start - wordstart*SHIFT
-    tmpstart = other.digit( wordstart ) | (ret.digit(wordstart) & get_int_mask(bitstart))
-    # if bitstart:
-      # tmpstart |= ret.digit(wordstart) & get_int_mask(bitstart) # lo
-    ret.setdigit( wordstart, tmpstart )
-
-    i = wordstart+1
-
-    if osize < wordstop:
-      while i < osize:
-        ret.setdigit( i, other.digit(i) )
-        i += 1
-      while i < wordstop:
-        ret._digits[i] = NULLDIGIT
-        i += 1
-    else: # osize >= wordstop
-      while i < wordstop:
-        ret.setdigit( i, other.digit(i) )
-        i += 1
-
-    # do stop
-    bitstop  = stop - wordstop*SHIFT
-    if bitstop:
-      masked_val = ret.digit(wordstop) & ~get_int_mask(bitstop) #hi
-      ret.setdigit( wordstop, other.digit(wordstop) | masked_val ) # lo|hi
-
-    return ret
-
-  assert wordstart >= 0
-  # wordstart < vsize <= wordstop
-  ret = rbigint( value._digits[:wordstart] + \
-                 other._digits[wordstart:osize], 1, osize )
-
-  # do start
-  bitstart = start - wordstart*SHIFT
-  if bitstart:
-    masked_val = value.digit(wordstart) & get_int_mask(bitstart) # lo
-    ret.setdigit( wordstart, masked_val | ret.digit(wordstart) ) # lo | hi
-
-  return ret
-
-
-        bigval = setitem_long_long_helper( )
+        bigval = setitem_long_long_helper( bigval, arg_w.bigval, start, stop )
         stop = start
 
     return W_BigBits( nbits, bigval )
