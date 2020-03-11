@@ -260,8 +260,8 @@ def write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data ):
 
         else:
           nextval = bigval.digit(curdigit)
-
-          this_nbits = SHIFT - curbit
+          bitend -= SHIFT
+          this_nbits = 8 - bitend
           curval |= (nextval & get_int_mask(bitend)) << this_nbits
           ba_data[begin] = chr(curval)
 
