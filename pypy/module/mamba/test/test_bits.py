@@ -8,6 +8,92 @@ class AppTestBits:
         import mamba, sys
         assert 0 == 0
 
+    def test_bits_getitem(self):
+        import mamba
+        b = mamba.Bits(8, 0b10110010)
+        assert b[0] == mamba.Bits(1, 0)
+        assert b[1] == mamba.Bits(1, 1)
+        assert b[2] == mamba.Bits(1, 0)
+        assert b[3] == mamba.Bits(1, 0)
+        assert b[4] == mamba.Bits(1, 1)
+        assert b[5] == mamba.Bits(1, 1)
+        assert b[6] == mamba.Bits(1, 0)
+        assert b[7] == mamba.Bits(1, 1)
+
+    def test_bits_setitem(self):
+        import mamba
+        b = mamba.Bits(8, 0b10110010)
+        b[0] = 1
+        assert b == 0b10110011
+        with raises(ValueError):
+            b[0] = 12
+
+    def test_bits_rsub(self):
+        import mamba
+        b = mamba.Bits(10, 18)
+        assert 20 - b == 2
+        assert -1 - b == 1024 - 1 - 18
+
+        b = mamba.Bits(100, 18)
+        assert 20 - b == 2
+        assert -1 - b == (2**100) - 1 - 18
+
+    def test_bits_shift(self):
+        import mamba
+        b = mamba.Bits(10, 1)
+        assert b << 10 == 0
+        assert b << 1 == 2
+        assert b << 4 == 1 << 4
+        assert b << mamba.Bits(10, 100) == 0
+        assert b << mamba.Bits(10, 1) == 2
+        assert b << mamba.Bits(10, 4) == 1 << 4
+
+        b = mamba.Bits(10, 0b10000)
+        assert b >> 4 == 1
+        assert b >> 10 == 0
+        assert b >> 2 == 0b100
+        assert b >> mamba.Bits(10, 4) == 1
+        assert b >> mamba.Bits(10, 10) == 0
+        assert b >> mamba.Bits(10, 2) == 0b100
+
+        b = mamba.Bits(100, 1)
+        assert b << 100 == 0
+        assert b << 1 == 2
+        assert b << 4 == 1 << 4
+        assert b << mamba.Bits(10, 100) == 0
+        assert b << mamba.Bits(10, 1) == 2
+        assert b << mamba.Bits(10, 4) == 1 << 4
+
+        b = mamba.Bits(100, 0b10000)
+        assert b >> 4 == 1
+        assert b >> 10 == 0
+        assert b >> 2 == 0b100
+        assert b >> mamba.Bits(10, 4) == 1
+        assert b >> mamba.Bits(10, 10) == 0
+        assert b >> mamba.Bits(10, 2) == 0b100
+
+    def test_mixed_cmp(self):
+        import mamba
+        s = mamba.Bits(10, 1)
+        b = mamba.Bits(100, 1)
+        assert s == s
+        assert s == b
+        assert b == s
+        assert b == b
+
+    def test_mixed_arithmetic(self):
+        import mamba
+        s = mamba.Bits(10, 1)
+        b = mamba.Bits(100, 1)
+        assert s + s == 2
+        assert b + s == 2
+        assert s + b == 2
+        assert b + b == 2
+        assert s & s == 1
+        assert b & s == 1
+        assert s & b == 1
+        assert b & b == 1
+
     def test_bits_str(self):
         import mamba, sys
         b = mamba.Bits(8,42)
