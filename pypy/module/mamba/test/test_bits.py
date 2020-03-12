@@ -20,6 +20,11 @@ class AppTestBits:
         assert b[6] == mamba.Bits(1, 0)
         assert b[7] == mamba.Bits(1, 1)
 
+    def test_bits_getitem_bug(self):
+        import mamba
+        b = mamba.Bits(100, 1)[63] # used to crash
+        assert b == 0
+
     def test_bits_setitem(self):
         import mamba
         b = mamba.Bits(8, 0b10110010)
