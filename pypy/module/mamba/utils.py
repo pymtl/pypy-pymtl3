@@ -48,102 +48,57 @@ def concat_impl(space, args):
 
   else:
     # ret > SHIFT-bits, need to have rbigint
-    digits = []
-    curword = 0
-    start = 0
+    bigval = rbigint.fromint(0)
 
-    i = num_args - 1
-    while i >= 0:
+    for i in range(num_args):
       arg_w = args_w[i]
-      i -= 1
 
       if isinstance( arg_w, W_SmallBits ):
-        stop = start + arg_w.nbits # put arg_w into [start:stop]
-        item = arg_w.intval
-
-        if stop <= SHIFT: # we are good
-          curword |= item << start
-          start = stop
-        else:
-          this_nbits = SHIFT - start
-
-          curword |= (item & get_int_mask(this_nbits) ) << start
-          digits.append(_store_digit(curword))
-
-          curword = item >> this_nbits
-          start = 8 - this_nbits
-
+        start = stop - arg_w.nbits
+        bigval = setitem_long_int_helper( bigval, arg_w.intval, start, stop )
+        stop = start
       elif isinstance( arg_w, W_BigBits ):
-        stop = start + arg_w.nbits # put arg_w into [start:stop]
-        item = arg_w.bigval
+        start = stop - arg_w.nbits
+        bigval = setitem_long_long_helper( bigval, arg_w.bigval, start, stop )
+        stop = start
 
-        numwords = arg_w / SHIFT
-        numbits  = arg_w.nbits - num_words * SHIFT
+    # digits = []
+    # curword = 0
+    # start = 0
 
-        start
-        for j in range( item.numdigits() ):
-          item.digit(j)
+    # i = num_args - 1
+    # while i >= 0:
+      # arg_w = args_w[i]
+      # i -= 1
 
-        other = other.lshift( start ) # lshift first to align two rbigints
+      # if isinstance( arg_w, W_SmallBits ):
+        # item = arg_w.intval
 
-        # Now other must be long, wordstart must < wordstop
-        wordstart = start / SHIFT
+        # stop = start + arg_w.nbits # put arg_w into [start:stop]
+        # if stop < SHIFT: # we are good
+          # curword |= item << start
+          # start = stop
+        # else:
+          # this_nbits = SHIFT - start
 
-        # vsize <= wordstart < wordstop, concatenate
-        if wordstart >= vsize:
-          return rbigint(value._digits[:vsize] + other._digits[vsize:], 1, osize )
+          # curword |= (item & get_int_mask(this_nbits) ) << start
+          # digits.append(_store_digit(curword))
 
-        wordstop = stop / SHIFT # wordstop >= osize-1
-        # (wordstart <) wordstop < vsize
-        if wordstop < vsize:
-          ret = rbigint( value._digits[:vsize], 1, vsize )
+          # curword = item >> this_nbits
+          # start = stop - SHIFT
 
-          # do start
-          bitstart = start - wordstart*SHIFT
-          tmpstart = other.digit( wordstart ) | (ret.digit(wordstart) & get_int_mask(bitstart))
-          # if bitstart:
-            # tmpstart |= ret.digit(wordstart) & get_int_mask(bitstart) # lo
-          ret.setdigit( wordstart, tmpstart )
+      # elif isinstance( arg_w, W_BigBits ):
+        # item = arg_w.bigval
 
-          i = wordstart+1
+        # nbits = arg_w.nbits
+        # stop = start + nbits # put arg_w into [start:stop]
 
-          if osize < wordstop:
-            while i < osize:
-              ret.setdigit( i, other.digit(i) )
-              i += 1
-            while i < wordstop:
-              ret._digits[i] = NULLDIGIT
-              i += 1
-          else: # osize >= wordstop
-            while i < wordstop:
-              ret.setdigit( i, other.digit(i) )
-              i += 1
+        # numwords = (nbits-1) / SHIFT
+        # rembits  = arg_w.nbits - num_words * SHIFT
+        # numwords += 1
 
-          # do stop
-          bitstop  = stop - wordstop*SHIFT
-          if bitstop:
-            masked_val = ret.digit(wordstop) & ~get_int_mask(bitstop) #hi
-            ret.setdigit( wordstop, other.digit(wordstop) | masked_val ) # lo|hi
-
-          return ret
-
-        assert wordstart >= 0
-        # wordstart < vsize <= wordstop
-        ret = rbigint( value._digits[:wordstart] + \
-                       other._digits[wordstart:osize], 1, osize )
-
-        # do start
-        bitstart = start - wordstart*SHIFT
-        if bitstart:
-          masked_val = value.digit(wordstart) & get_int_mask(bitstart) # lo
-          ret.setdigit( wordstart, masked_val | ret.digit(wordstart) ) # lo | hi
-
-        return ret
-
-#------------------------
-
-        bigval = setitem_long_long_helper( )
-
+        # if start <= SHIFT:
+          # for i in range(numwords):
     return W_BigBits( nbits, bigval )
 
 def concat(space, __args__):
@@ -222,7 +177,8 @@ def read_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes ):
         current_word |= item << bitstart
         bitstart = bitend
       else:
-        this_nbits = SHIFT - bitstart
+        bitend -= SHIFT
+        this_nbits = 8 - bitend
         current_word |= (item & get_int_mask(this_nbits) ) << bitstart
         digits.append(_store_digit(current_word))
 

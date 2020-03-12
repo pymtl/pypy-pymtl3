@@ -3,7 +3,7 @@ import operator
 
 from rpython.rlib import jit
 from rpython.rlib.rarithmetic import intmask
-from rpython.rlib.rbigint     import rbigint, NULLDIGIT, SHIFT, BASE16
+from rpython.rlib.rbigint     import rbigint, NULLDIGIT, SHIFT, BASE8, BASE16, UDIGIT_TYPE
 from rpython.tool.sourcetools import func_renamer, func_with_new_name
 
 from pypy.interpreter.baseobjspace import W_Root
@@ -15,21 +15,7 @@ from pypy.objspace.std.longobject import W_LongObject, newlong, _hash_long
 from pypy.objspace.std.sliceobject import W_SliceObject
 from pypy.objspace.std.util import BINARY_OPS, CMP_OPS, COMMUTATIVE_OPS
 
-@jit.elidable
-def int_bit_length( val ):
-  bits = 0
-  if val < 0:
-    val = -((val + 1) >> 1)
-    bits = 1
-  while val:
-    bits += 1
-    val >>= 1
-  return bits
-
-# Shunning:
-# I don't wrap int/long anymore, just keep rbigint all the time
-# Currently we only support arithmetic operations between Bits only, so
-# really those radd/rsub methods don't take effect.
+from pypy.module.mamba.helper_funcs import *
 
 # NOTE that we should keep self.value positive after any computation:
 # - The sign of the rbigint field should always be one
@@ -37,67 +23,18 @@ def int_bit_length( val ):
 # * Performing rbigint.and_/rbigint.int_and_ will turn sign back to 1
 # - rbigint._normalize() can only be called in @jit.elidable funcs
 
-mask = rbigint([NULLDIGIT], 1, 1)
-LONG_MASKS = [ mask ]
-for i in xrange(1024):
-  mask = mask.int_mul(2).int_add( 1 )
-  LONG_MASKS.append( mask )
-
-def get_long_mask( i ):
-  return LONG_MASKS[ i ]
-get_long_mask._always_inline_ = True
-
-def get_int_mask( i ):
-  return int((1<<i) - 1)
-get_int_mask._always_inline_ = True
-
-def get_int_lower( i ):
-  return -int((1<<i) - 1)
-get_int_mask._always_inline_ = True
-
-# This function implements fast ANDing mask functionality. PLEASE ONLY USE
-# IT ON POSITIVE RBIGINT. On the other hand, AND get_long_mask for those
-# operators that might produce negative results such as sub/new
-
-@jit.elidable
-def _rbigint_maskoff_high( value, masklen ):
-  if not value.sign:  return value
-  # assert value.sign > 0
-
-  lastword = (masklen - 1)/SHIFT
-  masksize  = lastword + 1
-  if masksize > value.numdigits(): return value
-  assert masksize > 0 # tell the dumb translator
-  # From now on 0 < masksize <= value.numdigits(), so lastword exists
-
-  ret = rbigint(value._digits[:masksize], 1, masksize)
-
-  # Here, if masklen % SHIFT == 0, then we don't need to mask the last
-  # word because wordpos = masklen / SHIFT = masksize in this case
-  maskbit = masklen % SHIFT
-  if maskbit != 0:
-    lastdigit = ret.digit(lastword)
-    mask = get_int_mask(maskbit)
-    if lastdigit >= mask:
-      ret.setdigit( lastword, lastdigit & mask )
-
-  ret._normalize()
-  return ret
-
 def _get_slice_range(space, nbits, w_start, w_stop):
   from pypy.module.mamba.bigbits import W_BigBits
   start = 0
 
   if   isinstance(w_start, W_IntObject): start = w_start.intval
   elif isinstance(w_start, W_SmallBits): start = w_start.intval
-  elif space.is_w(w_index.w_start, space.w_None):
-    pass
+  elif space.is_w(w_start, space.w_None): pass
   elif isinstance(w_start, W_BigBits):
     try:
       start = w_start.bigval.toint()
     except OverflowError:
       raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d", rbigint.str(w_start.bigval), nbits )
-
   elif isinstance(w_start, W_LongObject):
     try:
       start = w_start.num.toint()
@@ -110,58 +47,45 @@ def _get_slice_range(space, nbits, w_start, w_stop):
   stop = nbits
   if isinstance(w_stop, W_IntObject):   stop = w_stop.intval
   elif isinstance(w_stop, W_SmallBits): stop = w_stop.intval
-  elif space.is_w(w_index.w_stop, space.w_None):
-    pass
+  elif space.is_w(w_stop, space.w_None): pass
   elif isinstance(w_stop, W_BigBits):
     try:
       stop = w_stop.bigval.toint()
     except OverflowError:
-      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                      rbigint.str(w_stop.bigval), nbits )
+      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d", rbigint.str(w_stop.bigval), nbits )
   elif type(w_stop) is W_LongObject:
     try:
       stop = w_stop.num.toint()
     except OverflowError:
-      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                      rbigint.str(w_stop.num), nbits )
+      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d", rbigint.str(w_stop.num), nbits )
   else:
     raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for slice's stop." )
 
-  if start >= stop:
-    raise oefmt(space.w_ValueError, "Invalid range: start [%d] >= stop [%d]", start, stop )
-  if start < 0:
-    raise oefmt(space.w_ValueError, "Negative start: [%d]", start )
-  if stop > nbits:
-    raise oefmt(space.w_ValueError, "Stop [%d] too big for Bits%d", stop, nbits )
-
+  if start >= stop: raise oefmt(space.w_ValueError, "Invalid range: start [%d] >= stop [%d]", start, stop )
+  if start < 0:     raise oefmt(space.w_ValueError, "Negative start: [%d]", start )
+  if stop > nbits:  raise oefmt(space.w_ValueError, "Stop [%d] too big for Bits%d", stop, nbits )
   return start, stop
 
 def _get_index(space, nbits, w_index):
   from pypy.module.mamba.bigbits import W_BigBits
   index = 0
-  if isinstance(w_index, W_SmallBits):
-    index = w_index.intval
-  elif type(w_index) is W_IntObject:
-    index = w_index.intval
+  if isinstance(w_index, W_SmallBits): index = w_index.intval
+  elif type(w_index) is W_IntObject: index = w_index.intval
   elif isinstance(w_index, W_BigBits):
     try:
       index = w_index.bigval.toint()
     except OverflowError:
-      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                      rbigint.str(w_index.bigval), nbits )
+      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d", rbigint.str(w_index.bigval), nbits )
   elif type(w_index) is W_LongObject:
     try:
       index = w_index.num.toint()
     except OverflowError:
-      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
-                                      rbigint.str(w_index.num), nbits )
+      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d", rbigint.str(w_index.num), nbits )
   else:
     raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for slice index" )
 
-  if index < 0:
-    raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
-  if index >= nbits:
-    raise oefmt(space.w_ValueError, "Index [%d] too big for Bits%d", index, nbits )
+  if index < 0:       raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
+  if index >= nbits:  raise oefmt(space.w_ValueError, "Index [%d] too big for Bits%d", index, nbits )
   return index
 
 #-------------------------------------------------------------------------
@@ -193,13 +117,11 @@ class W_AbstractBits(W_Root):
     descr_unaryop.__doc__ = doc
     return descr_unaryop
 
-  descr_pos = _self_unaryop('pos', "x.__pos__() <==> +x")
-  descr_index = _self_unaryop('index',
-                              "x[y:z] <==> x[y.__index__():z.__index__()]")
-  descr_trunc = _self_unaryop('trunc',
-                              "Truncating an Integral returns itself.")
+  descr_pos   = _self_unaryop('pos', "x.__pos__() <==> +x")
+  descr_index = _self_unaryop('index', "x[y:z] <==> x[y.__index__():z.__index__()]")
+  descr_trunc = _self_unaryop('trunc', "Truncating an Integral returns itself.")
   descr_floor = _self_unaryop('floor', "Flooring an Integral returns itself.")
-  descr_ceil = _self_unaryop('ceil', "Ceiling of an Integral returns itself.")
+  descr_ceil  = _self_unaryop('ceil', "Ceiling of an Integral returns itself.")
 
   def _abstract_unaryop(opname, doc=SENTINEL):
     if doc is SENTINEL:
@@ -273,8 +195,8 @@ class W_AbstractBits(W_Root):
 
   # value can be negative! Be extremely cautious with _rb_maskoff_high
   @staticmethod
-  @unwrap_spec(w_Value=WrappedDefault(0), w_trunc_int=WrappedDefault(0))
-  def descr_new( space, w_objtype, w_nbits, w_Value, w_trunc_int ):
+  @unwrap_spec(w_value=WrappedDefault(0), w_trunc_int=WrappedDefault(0))
+  def descr_new( space, w_objtype, w_nbits, w_value, w_trunc_int ):
     from pypy.module.mamba.bigbits import W_BigBits
 
     if type(w_nbits) is W_IntObject:
@@ -286,47 +208,50 @@ class W_AbstractBits(W_Root):
         ret = space.allocate_instance( W_SmallBits, w_objtype )
         ret.nbits = nbits
 
-        if   isinstance(w_Value, W_IntObject):
-          intval = w_Value.intval
+        if   isinstance(w_value, W_IntObject):
+          intval = w_value.intval
+          up = get_int_mask(nbits)
 
           if isinstance(w_trunc_int, W_IntObject):
             if not w_trunc_int.intval:
-              bitlen = int_bit_length(intval) + (intval < 0)
-              if bitlen > nbits:
-                raise oefmt(space.w_ValueError, "Value 0x%s is too big for Bits%d!\n"
-                                                "(%d bits are needed in two's complement.)",
-                                                rbigint.fromint(intval).format(BASE16), nbits, bitlen)
-            ret.intval = intval & get_int_mask(nbits)
+              lo = get_int_lower(nbits)
+
+              if intval < lo or intval > up:
+                raise oefmt(space.w_ValueError, "Value %s is too big for Bits%d!\n"
+                                                "(Bits%d only accepts %s <= value <= %s)",
+                                                hex(intval), nbits, nbits, hex(lo), hex(up))
+            ret.intval = intval & up
           else:
             raise oefmt(space.w_ValueError, "trunc_int can only be boolean/int, not '%T'", w_trunc_int)
 
-        elif isinstance(w_Value, W_SmallBits):
-          if nbits != w_Value.nbits:
-            if nbits < w_Value.nbits:
+        elif isinstance(w_value, W_SmallBits):
+          if nbits != w_value.nbits:
+            if nbits < w_value.nbits:
               raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too wide to be used to construct Bits%d!\n"
                                               "- Suggestion: directly use trunc( value, %d/Bits%d )",
-                                              w_Value.nbits, nbits, nbits, nbits )
+                                              w_value.nbits, nbits, nbits, nbits )
             else:
               raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too narrow to be used to construct Bits%d!\n"
                                               "- Suggestion: directly use zext/sext( value, %d/Bits%d )",
-                                              w_Value.nbits, nbits, nbits, nbits )
-          ret.intval = w_Value.intval
+                                              w_value.nbits, nbits, nbits, nbits )
+          ret.intval = w_value.intval
 
-        elif isinstance(w_Value, W_BigBits):
+        elif isinstance(w_value, W_BigBits):
           raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too wide to be used to construct Bits%d!\n"
                                           "- Suggestion: directly use trunc( value, %d/Bits%d )",
-                                          w_Value.nbits, nbits, nbits, nbits )
+                                          w_value.nbits, nbits, nbits, nbits )
 
-        elif isinstance(w_Value, W_LongObject):
-          bigval = w_Value.num
+        elif isinstance(w_value, W_LongObject):
+          bigval = w_value.num
 
           if isinstance(w_trunc_int, W_IntObject):
             if not w_trunc_int.intval:
-              bitlen = bigval.bit_length() + (bigval.sign < 0)
-              if bitlen > nbits:
-                raise oefmt(space.w_ValueError, "Value 0x%s is too big for Bits%d!\n"
-                                                "(%d bits are needed in two's complement.)",
-                                                bigval.format(BASE16), nbits, bitlen )
+              if rbigint_check_exceed_nbits( bigval, nbits ):
+                raise oefmt(space.w_ValueError, "Value %s is too big for Bits%d!\n"
+                                                "(Bits%d only accepts %s <= value <= %s)",
+                                                bigval.format(BASE16, prefix='0x'), nbits, nbits,
+                                                get_long_lower(nbits).format(BASE16, prefix='0x'),
+                                                get_long_mask(nbits).format(BASE16, prefix='0x'))
             ret.intval = bigval.int_and_( get_int_mask(nbits) ).digit(0)
           else:
             raise oefmt(space.w_ValueError, "trunc_int can only be boolean, not '%T'", w_trunc_int)
@@ -334,7 +259,7 @@ class W_AbstractBits(W_Root):
         else:
           raise oefmt(space.w_TypeError, "Value used to construct Bits%d "
                       "must be int/long/Bits " # or whatever has __int__, "
-                      "not '%T'", nbits, w_Value)
+                      "not '%T'", nbits, w_value)
 
       else: # nbits > SHIFT
         if nbits > 1024:
@@ -343,44 +268,44 @@ class W_AbstractBits(W_Root):
         ret = space.allocate_instance( W_BigBits, w_objtype )
         ret.nbits = nbits
 
-        if   isinstance(w_Value, W_IntObject):
+        if   isinstance(w_value, W_IntObject):
           # definitely fit in BigBits
-          ret.bigval = get_long_mask(nbits).int_and_( w_Value.intval )
+          ret.bigval = get_long_mask(nbits).int_and_( w_value.intval )
 
-        elif isinstance(w_Value, W_SmallBits):
+        elif isinstance(w_value, W_SmallBits):
           raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too narrow to be used to construct Bits%d!\n"
                                           "- Suggestion: directly use zext/sext( value, %d/Bits%d )",
-                                          w_Value.nbits, nbits, nbits, nbits )
+                                          w_value.nbits, nbits, nbits, nbits )
 
-        elif isinstance(w_Value, W_BigBits):
-          if nbits != w_Value.nbits:
-            if nbits < w_Value.nbits:
+        elif isinstance(w_value, W_BigBits):
+          if nbits != w_value.nbits:
+            if nbits < w_value.nbits:
               raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too wide to be used to construct Bits%d!\n"
                                               "- Suggestion: directly use trunc( value, %d/Bits%d )",
-                                              w_Value.nbits, nbits, nbits, nbits )
+                                              w_value.nbits, nbits, nbits, nbits )
             else:
               raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too narrow to be used to construct Bits%d!\n"
                                               "- Suggestion: directly use zext/sext( value, %d/Bits%d )",
-                                              w_Value.nbits, nbits, nbits, nbits )
-          ret.bigval = w_Value.bigval
+                                              w_value.nbits, nbits, nbits, nbits )
+          ret.bigval = w_value.bigval
 
-        elif isinstance(w_Value, W_LongObject):
-          bigval = w_Value.num
+        elif isinstance(w_value, W_LongObject):
+          bigval = w_value.num
 
           if isinstance(w_trunc_int, W_IntObject):
             if not w_trunc_int.intval:
-              bitlen = bigval.bit_length() + (bigval.sign < 0)
-              if bitlen > nbits:
-                raise oefmt(space.w_ValueError, "Value 0x%s is too big for Bits%d!\n"
-                                                "(%d bits are needed in two's complement.)",
-                                                bigval.format(BASE16), nbits, bitlen )
-            ret.bigval = bigval.and_( get_long_mask(nbits) )
+              if rbigint_check_exceed_nbits( bigval, nbits ):
+                raise oefmt(space.w_ValueError, "Value %s is too big for Bits%d!\n"
+                                                "(Bits%d only accepts %s <= value <= %s)",
+                                                bigval.format(BASE16, prefix='0x'), nbits, nbits,
+                                                hex(get_int_lower(nbits)), hex(get_int_mask(nbits)))
+            ret.bigval = bigval.and_( get_long_mask( nbits ) )
           else:
             raise oefmt(space.w_ValueError, "trunc_int can only be boolean, not '%T'", w_trunc_int)
         else:
           raise oefmt(space.w_TypeError, "Value used to construct Bits%d "
                       "must be int/long/Bits" # or whatever has __int__, "
-                      "not '%T'", nbits, w_Value)
+                      "not '%T'", nbits, w_value)
 
     else:
       raise oefmt(space.w_TypeError, "'nbits' must be an int, not '%T'", w_nbits )
@@ -388,14 +313,29 @@ class W_AbstractBits(W_Root):
 
   # Bits specific
 
-  def _format16(self, space):
+  def _format2(self, space, base):
+    raise NotImplementedError
+
+  def _format8(self, space, base):
+    raise NotImplementedError
+
+  def _format16(self, space, base):
     raise NotImplementedError
 
   def descr_repr(self, space):
     return space.newtext( "Bits%d(0x%s)" % (self.nbits, self._format16(space)) )
 
+  def descr_bin(self, space):
+    return self._format2( space )
+
+  def descr_oct(self, space):
+    return self._format8( space )
+
+  def descr_hex(self, space):
+    return self._format16( space )
+
   def descr_str(self, space):
-    return space.newtext( "%s" % (self._format16(space)) )
+    return self._format16( space )
 
   def descr_get_nbits(self, space):
     return wrapint( space, self.nbits )
@@ -420,6 +360,12 @@ class W_AbstractBits(W_Root):
 
   def descr_ilshift(self, space, w_other):
     return self._descr_ilshift(space, w_other)
+
+  def _descr_imatmul(self, space, w_other):
+    raise NotImplementedError
+
+  def descr_imatmul(self, space, w_other):
+    return self._descr_imatmul(space, w_other)
 
   def descr_copy(self):
     raise NotImplementedError
@@ -453,19 +399,15 @@ class W_SmallBits(W_AbstractBits):
 
   def descr_getitem(self, space, w_index):
 
-    if type(w_index) is W_SliceObject:
+    if type(w_index) is W_SliceObject: # [a:b]
       if space.is_w(w_index.w_step, space.w_None):
-
         start, stop = _get_slice_range( space, self.nbits, w_index.w_start, w_index.w_stop )
-
         slice_nbits = stop - start
         res = (self.intval >> start) & get_int_mask(slice_nbits)
         return W_SmallBits( slice_nbits, res )
-
       else:
         raise oefmt(space.w_IndexError, "Index cannot contain step" )
-
-    else:
+    else: # [a]
       index = _get_index(space, self.nbits, w_index)
       return W_SmallBits( 1, (self.intval >> index) & 1 )
 
@@ -474,12 +416,8 @@ class W_SmallBits(W_AbstractBits):
 
     if type(w_index) is W_SliceObject:
       if space.is_w(w_index.w_step, space.w_None):
-
         start, stop = _get_slice_range( space, self.nbits, w_index.w_start, w_index.w_stop )
-
         slice_nbits = stop - start
-
-        # Check value bitlen. No need to check Bits, but check int/long.
 
         if isinstance(w_other, W_SmallBits):
           if w_other.nbits != slice_nbits:
@@ -492,33 +430,35 @@ class W_SmallBits(W_AbstractBits):
           valuemask   = ~(get_int_mask(slice_nbits) << start)
           self.intval = (self.intval & valuemask) | (w_other.intval << start)
 
-        elif isinstance(w_other, W_BigBits):
-          raise ValueError( "Cannot fit a Bits%d object into a %d-bit slice [%d:%d]\n"
-                            "- Suggestion: trunc the RHS", w_other.nbits, slice_nbits, start, stop)
-
         elif isinstance(w_other, W_IntObject):
           other = w_other.intval
-          bitlen = int_bit_length(other) + (other < 0)
-          if bitlen != slice_nbits:
-            raise oefmt(space.w_ValueError, "Value 0x%s cannot fit into "
-                                            "[%d:%d] (%d-bit) slice", rbigint.fromint(other).format(BASE16),
-                                            start, stop, slice_nbits )
+          up = get_int_mask(slice_nbits)
+          lo = get_int_lower(slice_nbits)
 
-          mask = get_int_mask(slice_nbits)
-          other &= mask
-          valuemask = ~(mask << start)
+          if other < lo or other > up:
+            raise oefmt(space.w_ValueError, "Cannot fit value %s into a Bits%d slice!\n"
+                                            "(Bits%d only accepts %s <= value <= %s)",
+                                            hex(other), slice_nbits, slice_nbits, hex(lo), hex(up))
+
+          other &= up
+          valuemask = ~(up << start)
           self.intval = (self.intval & valuemask) | (other << start)
 
-        elif type(w_other) is W_LongObject:
+        elif isinstance(w_other, W_LongObject):
           other = w_other.num
-          bitlen = other.bit_length() + (other.sign < 0)
-          if bitlen > slice_nbits:
-            raise oefmt(space.w_ValueError, "Value 0x%s cannot fit into "
-                  "[%d:%d] (%d-bit) slice", other.format(BASE16), start, stop, slice_nbits )
+          if rbigint_check_exceed_nbits( other, slice_nbits ):
+            raise oefmt(space.w_ValueError, "Cannot fit value %s into a Bits%d slice!\n"
+                                            "(Bits%d only accepts %s <= value <= %s)",
+                                            other.format(BASE16, prefix='0x'), slice_nbits, slice_nbits,
+                                            hex(get_int_lower(slice_nbits)),hex(get_int_mask(slice_nbits)))
           mask = get_int_mask(slice_nbits)
           other = other.int_and_(mask).digit(0)
           valuemask = ~(mask << start)
           self.intval = (self.intval & valuemask) | (other << start)
+
+        elif isinstance(w_other, W_BigBits):
+          raise ValueError( "Cannot fit a Bits%d object into a %d-bit slice [%d:%d]\n"
+                            "- Suggestion: trunc the RHS", w_other.nbits, slice_nbits, start, stop)
 
       else:
         raise oefmt(space.w_ValueError, "Bits slice cannot have step." )
@@ -530,35 +470,27 @@ class W_SmallBits(W_AbstractBits):
       if isinstance(w_other, W_SmallBits):
         o_nbits = w_other.nbits
         if o_nbits > 1:
-          raise oefmt(space.w_ValueError, "Bits%d cannot fit into 1-bit slice", o_nbits )
+          raise oefmt(space.w_ValueError, "Cannot fit a Bits%d object into an 1-bit slice", o_nbits )
         other = w_other.intval # must be 1-bit and don't even check
-
         self.intval = (self.intval & ~(1 << index)) | (other << index)
 
       elif isinstance(w_other, W_IntObject):
         other = w_other.intval
         if other < 0 or other > 1:
-          raise oefmt(space.w_ValueError, "Value %d cannot fit into 1-bit slice", other )
-
+          raise oefmt(space.w_ValueError, "Value %s is too big for the 1-bit slice", hex(other) )
         self.intval = (self.intval & ~(1 << index)) | (other << index)
 
-      # Check value bitlen. No need to check Bits, but check int/long.
       elif isinstance(w_other, W_BigBits):
-        o_nbits = w_other.nbits
-        if o_nbits > 1:
-          raise oefmt(space.w_ValueError, "Bits%d cannot fit into 1-bit slice", o_nbits )
-        other = w_other.intval # must be 1-bit and don't even check
+        raise oefmt(space.w_ValueError, "Cannot fit a Bits%d object into 1-bit slice", w_other.nbits )
 
-      elif type(w_other) is W_LongObject:
+      elif isinstance(w_other, W_LongObject):
         other = w_other.num
         if other.numdigits() > 1:
-          raise oefmt(space.w_ValueError, "Value %s cannot fit into 1-bit slice", other.format(BASE16) )
-
-        other = other.digit(0)
-        if other < 0 or other > 1:
-          raise oefmt(space.w_ValueError, "Value %d cannot fit into 1-bit slice", other )
-
-        self.intval = (self.intval & ~(1 << index)) | (other << index)
+          raise oefmt(space.w_ValueError, "Value %s is too big for the 1-bit slice", other.format(BASE16, prefix='0x') )
+        lsw = other.digit(0)
+        if lsw < 0 or lsw > 1:
+          raise oefmt(space.w_ValueError, "Value %s is too big for the 1-bit slice", other.format(BASE16, prefix='0x') )
+        self.intval = (self.intval & ~(1 << lsw)) | (lsw << index)
       else:
         raise oefmt(space.w_TypeError, "Please pass in int/long/Bits value. -- setitem #4" )
 
@@ -566,9 +498,16 @@ class W_SmallBits(W_AbstractBits):
   # Miscellaneous methods for string format
   #-----------------------------------------------------------------------
 
-  def _format16(self, space):
-    data = (rbigint.fromint(self.intval)).format(BASE16)
-    w_data = space.newtext( data )
+  def _format2(self, space ):
+    w_data = space.newtext( rbigint.fromint(self.intval).format('01') )
+    return space.text_w( w_data.descr_zfill(space, self.nbits) )
+
+  def _format8(self, space ):
+    w_data = space.newtext( rbigint.fromint(self.intval).format(BASE8) )
+    return space.text_w( w_data.descr_zfill(space, (((self.nbits-1)>>1)+1)) )
+
+  def _format16(self, space ):
+    w_data = space.newtext( rbigint.fromint(self.intval).format(BASE16) )
     return space.text_w( w_data.descr_zfill(space, (((self.nbits-1)>>2)+1)) )
 
   #-----------------------------------------------------------------------
@@ -583,22 +522,34 @@ class W_SmallBits(W_AbstractBits):
     def descr_cmp(self, space, w_other):
       from pypy.module.mamba.bigbits import W_BigBits
       x = self.intval
+
       if   isinstance(w_other, W_SmallBits):
         return W_SmallBits( 1, iiop( x, w_other.intval ) )
 
       elif isinstance(w_other, W_IntObject):
-        # TODO Maybe add int_bit_length check?
-        return W_SmallBits( 1, iiop( x, w_other.intval & get_int_mask(self.nbits) ) )
+        y = w_other.intval
+        mask = get_int_mask(self.nbits)
+        if y < 0 or y > mask:
+          raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
+                                          "Suggestion: 0 <= x <= %d", hex(y), self.nbits, mask )
+        return W_SmallBits( 1, iiop( x, y & mask ) )
 
       elif isinstance(w_other, W_BigBits):
         return W_SmallBits( 1, ilopp( w_other.bigval, x ) )
 
       elif type(w_other) is W_LongObject:
-        # TODO Maybe add bit_length check?
-        return W_SmallBits( 1, ilopp( get_long_mask(self.nbits).and_( w_other.num ), x ) )
-      # Match cpython behavior
-      return W_SmallBits( 1, 0 )
-      # raise oefmt(space.w_TypeError, "Please compare two Bits/int/long objects" )
+        y = w_other.num
+        if rbigint_invalid_binop_operand( y, self.nbits ):
+          raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n",
+                                          "Suggestion: 0 <= x <= %d", y.format(BASE16, prefix='0x'), self.nbits,
+                                          get_long_mask(self.nbits).format(BASE16, prefix='0x'))
+        return W_SmallBits( 1, ilopp( get_long_mask(self.nbits).and_( y ), x ) )
+
+      if opname == 'eq':
+        # Match cpython behavior
+        return W_SmallBits( 1, 0 )
+
+      raise oefmt(space.w_TypeError, "Please compare two Bits/int/long objects" )
 
     return descr_cmp
 
@@ -625,13 +576,14 @@ class W_SmallBits(W_AbstractBits):
     @func_renamer('descr_' + opname)
     def descr_binop(self, space, w_other):
       from pypy.module.mamba.bigbits import W_BigBits
+      nbits = self.nbits
       # add, sub, mul
       if ovf:
         x = self.intval
 
         if isinstance(w_other, W_SmallBits):
           y = w_other.intval
-          res_nbits = max(self.nbits, w_other.nbits)
+          res_nbits = max(nbits, w_other.nbits)
           mask = get_int_mask(res_nbits)
           try:
             z = ovfcheck( iiop(x, y) )
@@ -646,22 +598,20 @@ class W_SmallBits(W_AbstractBits):
 
         elif isinstance(w_other, W_IntObject):
           y = w_other.intval
-
-          if y < 0 or y > get_int_mask(self.nbits):
-            raise oefmt(space.w_ValueError, "Integer 0x%s is not valid operand of Bits%d!\n",
-                                            rbigint.fromint(y).format(BASE16), self.nbits )
-
-          mask = get_int_mask(self.nbits)
+          mask = get_int_mask(nbits)
+          if y < 0 or y > mask:
+            raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
+                                            "Suggestion: 0 <= x <= %d", hex(y), self.nbits, mask )
           try:
             z = ovfcheck( iiop(x, y) )
-            return W_SmallBits( self.nbits, z & mask )
+            return W_SmallBits( nbits, z & mask )
           except OverflowError:
             z = liop( rbigint.fromint(x), y )
             if opname in COMMUTATIVE_OPS: # add, mul
               z = z.digit(0) & mask
             else: # sub, should AND mask
               z = z.int_and_( mask ).digit(0)
-            return W_SmallBits( self.nbits, z )
+            return W_SmallBits( nbits, z )
 
         elif isinstance(w_other, W_BigBits):
           y = w_other.bigval
@@ -676,40 +626,44 @@ class W_SmallBits(W_AbstractBits):
 
         elif type(w_other) is W_LongObject:
           y = w_other.num
-          if y.sign < 0 or y > get_long_mask(self.nbits):
-            raise oefmt(space.w_ValueError, "Integer 0x%s is not valid operand of Bits%d!\n",
-                                            y.format(BASE16), self.nbits )
-          mask = get_int_mask(self.nbits)
+          if rbigint_invalid_binop_operand( y, self.nbits ):
+            raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n",
+                                            "Suggestion: 0 <= x <= %d", y.format(BASE16, prefix='0x'), nbits,
+                                            get_long_mask(nbits).format(BASE16, prefix='0x'))
+
+          mask = get_int_mask(nbits)
           if opname in COMMUTATIVE_OPS: # add, mul
             z = liop(y, x).int_and_( mask )
-            return W_SmallBits( self.nbits, z.digit(0) )
+            return W_SmallBits( nbits, z.digit(0) )
           else: # sub
             z = llop( rbigint.fromint(x), y ).int_and_( mask )
-            return W_SmallBits( self.nbits, z.digit(0) )
+            return W_SmallBits( nbits, z.digit(0) )
 
       # and, or, xor, no overflow
       # opname should be in COMMUTATIVE_OPS
       else:
         x = self.intval
         if isinstance(w_other, W_SmallBits):
-          return W_SmallBits( max(self.nbits, w_other.nbits), iiop( x, w_other.intval ) )
+          return W_SmallBits( max(nbits, w_other.nbits), iiop( x, w_other.intval ) )
 
         elif isinstance(w_other, W_IntObject):
           y = w_other.intval
-          if y < 0 or y > get_int_mask(self.nbits):
-            raise oefmt(space.w_ValueError, "Integer 0x%s is not valid operand of Bits%d!\n",
-                                            rbigint.fromint(y).format(BASE16), self.nbits )
-          return W_SmallBits( self.nbits, iiop( x, y & get_int_mask(self.nbits) ) )
+          mask = get_int_mask(nbits)
+          if y < 0 or y > mask:
+            raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
+                                            "Suggestion: 0 <= x <= %d", hex(y), nbits, mask )
+          return W_SmallBits( nbits, iiop( x, y & mask ) )
 
         elif isinstance(w_other, W_BigBits):
           return W_BigBits( w_other.nbits, liop( w_other.bigval, x ) )
 
         elif type(w_other) is W_LongObject:
           y = w_other.num
-          if y.sign < 0 or y > get_long_mask(self.nbits):
-            raise oefmt(space.w_ValueError, "Integer 0x%s is not valid operand of Bits%d!\n",
-                                            y.format(BASE16), self.nbits )
-          return W_SmallBits( self.nbits, iiop( x, w_other.num.int_and_( get_int_mask(self.nbits) ).digit(0) ) )
+          if rbigint_invalid_binop_operand( y, nbits ):
+            raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n",
+                                            "Suggestion: 0 <= x <= %d", y.format(BASE16, prefix='0x'), nbits,
+                                            get_long_mask(nbits).format(BASE16, prefix='0x'))
+          return W_SmallBits( nbits, iiop( x, w_other.num.int_and_( get_int_mask(nbits) ).digit(0) ) )
 
       raise oefmt(space.w_TypeError, "Please do %s between Bits and Bits/int/long objects", opname)
 
@@ -730,27 +684,32 @@ class W_SmallBits(W_AbstractBits):
     liop = getattr( rbigint, "int_sub" )
     iiop = getattr( operator, "sub" )
 
-    y = self.intval
+    nbits = self.nbits
+    y     = self.intval
 
     if isinstance(w_other, W_IntObject):
       x = w_other.intval
-      mask = get_int_mask(self.nbits)
-      if y < 0 or y > get_int_mask(self.nbits):
-        raise oefmt(space.w_ValueError, "Integer 0x%s is not valid operand of Bits%d!\n",
-                                        rbigint.fromint(y).format(BASE16), self.nbits )
+      mask = get_int_mask(nbits)
+      if x < 0 or x > mask:
+        raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
+                                        "Suggestion: 0 <= x <= %d", hex(x), nbits, mask )
       try:
         z = ovfcheck( iiop(x, y) )
-        return W_SmallBits( self.nbits, z & mask )
+        return W_SmallBits( nbits, z & mask )
       except OverflowError:
         z = liop( rbigint.fromint(x), y ).int_and_( mask ).digit(0)
-        return W_SmallBits( self.nbits, z )
+        return W_SmallBits( nbits, z )
+
     elif type(w_other) is W_LongObject:
       x = w_other.num
-      if x.sign < 0 or x > get_long_mask(self.nbits):
-        raise oefmt(space.w_ValueError, "Integer 0x%s is not valid operand of Bits%d!\n",
-                                        x.format(BASE16), self.nbits )
-      z = liop( x, y ).int_and_( get_int_mask(self.nbits) )
-      return W_SmallBits( self.nbits, z.digit(0) )
+
+      if rbigint_invalid_binop_operand( x, nbits ):
+        raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n",
+                                        "Suggestion: 0 <= x <= %d", x.format(BASE16, prefix='0x'), nbits,
+                                        get_long_mask(nbits).format(BASE16, prefix='0x'))
+
+      z = liop( x, y ).int_and_( get_int_mask(nbits) )
+      return W_SmallBits( nbits, z.digit(0) )
 
   descr_add, descr_radd = _make_descr_binop_opname('add')
   descr_sub, _          = _make_descr_binop_opname('sub')
@@ -782,7 +741,7 @@ class W_SmallBits(W_AbstractBits):
         return W_SmallBits( self.nbits, x >> shamt )
       return W_SmallBits( self.nbits )
 
-    elif type(w_other) is W_LongObject:
+    elif isinstance(w_other, W_LongObject):
       big = w_other.num
       if big.sign < 0: raise oefmt( space.w_ValueError, "negative shift amount" )
       shamt = big.digit(0)
@@ -828,86 +787,6 @@ class W_SmallBits(W_AbstractBits):
   def descr_rlshift(self, space, w_other): # int << Bits, what is nbits??
     raise oefmt(space.w_TypeError, "rlshift not implemented" )
 
-  # @=
-
-  def _descr_imatmul(self, space, w_other):
-    from pypy.module.mamba.bigbits import W_BigBits
-
-    if isinstance(w_other, W_SmallBits):
-      if self.nbits != w_other.nbits:
-        if self.nbits > w_other.nbits:
-          raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= blocking assignment, "
-                                          "but here LHS Bits%d > RHS Bits%d.\n"
-                                          "- Suggestion: LHS @= zext/sext(RHS, nbits/Type)", self.nbits, w_other.nbits)
-        else:
-          raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= blocking assignment, "
-                                          "but here LHS Bits%d < RHS Bits%d.\n"
-                                          "- Suggestion: LHS @= zext/sext(RHS, nbits/Type)", self.nbits, w_other.nbits)
-      self.intval = other.intval
-
-    elif type(w_other) is W_IntObject:
-      v = w_other.intval
-      bit_length = int_bit_length(v) + (v < 0)
-      if bit_length > self.nbits:
-        raise oefmt(space.w_ValueError, "Value %s is too big for Bits%d!\n"
-                                        "(%d bits are needed in two's complement.)",
-                                        v, self.nbits, bit_length )
-
-      self.intval = v & get_int_mask( self.nbits )
-
-    elif isinstance(w_other, W_BigBits):
-      raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= blocking assignment, "
-                                      "but here LHS Bits%d < RHS Bits%d.\n"
-                                      "- Suggestion: LHS @= trunc(RHS, nbits/Type)", self.nbits, w_other.nbits )
-
-    elif type(w_other) is W_LongObject:
-      v = w_other.num
-      bit_length = v.bit_length() + ( v.sign < 0 )
-      if bit_length > self.nbits:
-        raise oefmt(space.w_ValueError, "Value %s is too big for Bits%!\n" \
-                                        "(%d bits are needed in two's complement.)",
-                                        v.format(BASE16), self.nbits, bit_length )
-
-      self.intval = v.int_and_( get_int_mask( self.nbits ) ).digit(0)
-
-    else:
-      raise oefmt(space.w_TypeError, "Invalid RHS value for @= : Must be int or Bits")
-
-    return self
-
-  def _descr_flip(self, space):
-    raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects which has no _next", self)
-
-  #-----------------------------------------------------------------------
-  # <<=
-  #-----------------------------------------------------------------------
-
-  def _descr_ilshift(self, space, w_other):
-    from pypy.module.mamba.bigbits import W_BigBits
-
-    if isinstance(w_other, W_SmallBits):
-      if self.nbits != w_other.nbits:
-        raise oefmt(space.w_ValueError, "Bitwidth mismatch during <<=, assigning Bits%d <<= Bits%d",
-                                        self.nbits, w_other.nbits)
-      return W_SmallBitsWithNext( self.nbits, self.intval, w_other.intval )
-
-    # elif type(w_other) is W_IntObject: # TODO check int_bit_length?
-      # return W_SmallBitsWithNext( self.nbits, self.intval, w_other.intval & get_int_mask(self.nbits) )
-
-    elif isinstance(w_other, W_BigBits):
-      raise oefmt(space.w_ValueError, "Bitwidth mismatch during <<=, assigning Bits%d <<= Bits%d",
-                                      self.nbits, w_other.nbits)
-
-    # elif type(w_other) is W_LongObject: # TODO check int_bit_length?
-      # return W_SmallBitsWithNext( self.nbits, self.intval,
-        # w_other.num.int_and_( get_int_mask(self.nbits) ).digit(0) )
-
-    else:
-      raise oefmt(space.w_TypeError, "RHS of <<= has to be Bits%d, not '%T'", self.nbits, w_other)
-
-  def _descr_flip(self, space):
-    raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects which has no _next", self)
-
   #-----------------------------------------------------------------------
   # value access
   #-----------------------------------------------------------------------
@@ -950,6 +829,143 @@ class W_SmallBits(W_AbstractBits):
     x += 97531
     return space.newint( intmask(x) )
 
+  # PyMTL specific
+  #        |
+  #        |
+  #        V
+
+  #-----------------------------------------------------------------------
+  # @=
+  #-----------------------------------------------------------------------
+
+  def _descr_imatmul(self, space, w_other):
+    from pypy.module.mamba.bigbits import W_BigBits
+    nbits = self.nbits
+
+    if isinstance(w_other, W_SmallBits):
+      if nbits != w_other.nbits:
+        if nbits > w_other.nbits:
+          raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= blocking assignment, "
+                                          "but here LHS Bits%d > RHS Bits%d.\n"
+                                          "- Suggestion: LHS @= zext/sext(RHS, nbits/Type)", nbits, w_other.nbits)
+        else:
+          raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= blocking assignment, "
+                                          "but here LHS Bits%d < RHS Bits%d.\n"
+                                          "- Suggestion: LHS @= zext/sext(RHS, nbits/Type)", nbits, w_other.nbits)
+      self.intval = w_other.intval
+
+    elif isinstance(w_other, W_IntObject):
+      intval = w_other.intval
+
+      up = get_int_mask(nbits)
+      lo = get_int_lower(nbits)
+
+      if intval < lo or intval > up:
+        raise oefmt(space.w_ValueError, "RHS value %s of @= is too wide for LHS Bits%d!\n" \
+                                        "(Bits%d only accepts %s <= value <= %s)",
+                                        hex(intval), nbits, nbits, hex(lo), hex(up))
+      self.intval = intval & up
+
+    elif isinstance(w_other, W_BigBits):
+      raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= blocking assignment, "
+                                      "but here LHS Bits%d < RHS Bits%d.\n"
+                                      "- Suggestion: LHS @= trunc(RHS, nbits/Type)", nbits, w_other.nbits )
+
+    elif isinstance(w_other, W_LongObject):
+      bigval = w_other.num
+
+      if rbigint_check_exceed_nbits( bigval, nbits ):
+        raise oefmt(space.w_ValueError, "RHS value %s of @= is too wide for LHS Bits%d!\n" \
+                                        "(Bits%d only accepts %s <= value <= %s)",
+                                        bigval.format(BASE16, prefix='0x'), nbits, nbits,
+                                        hex(get_int_lower(nbits)), hex(get_int_mask(nbits)))
+      self.intval = bigval.int_and_( get_int_mask( nbits ) ).digit(0)
+
+    # else:
+      # bits = space.call_method(w_other, 'to_bits')
+      # if isinstance(w_other, W_SmallBits):
+        # if nbits > w_other.nbits:
+          # raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS to_bits() during @= blocking assignment, "
+                                          # "but here LHS Bits%d > RHS Bits%d.\n"
+                                          # "- Suggestion: LHS @= zext/sext(RHS, nbits/Type)", nbits, w_other.nbits)
+        # else:
+          # raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= blocking assignment, "
+                                          # "but here LHS Bits%d < RHS Bits%d.\n"
+                                          # "- Suggestion: LHS @= zext/sext(RHS, nbits/Type)", nbits, w_other.nbits)
+        # self.intval = w_other.intval
+
+      # elif isinstance(w_other, BigBits):
+        # raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS to_bits() during @= blocking assignment, "
+                                        # "but here LHS Bits%d < RHS Bits%d.\n"
+                                        # "- Suggestion: LHS @= trunc(RHS, nbits/Type)", nbits, w_other.nbits )
+
+      # else:
+        # raise oefmt(space.w_ValueError, "RHS to_bits() must return Bits object!")
+
+    else:
+      raise oefmt(space.w_TypeError, "Invalid RHS value for @= : Must be int or Bits or Bitstruct with nbits/to_bits methods")
+
+    return self
+
+  def _descr_flip(self, space):
+    raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects which has no _next", self)
+
+  #-----------------------------------------------------------------------
+  # <<=
+  #-----------------------------------------------------------------------
+
+  def _descr_ilshift(self, space, w_other):
+    from pypy.module.mamba.bigbits import W_BigBits
+
+    nbits = self.nbits
+
+    if isinstance(w_other, W_SmallBits):
+      if nbits != w_other.nbits:
+        if nbits > w_other.nbits:
+          raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
+                                          "but here LHS Bits%d > RHS Bits%d.\n"
+                                          "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", nbits, w_other.nbits)
+        else:
+          raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= non-blocking assignment, "
+                                          "but here LHS Bits%d < RHS Bits%d.\n"
+                                          "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", nbits, w_other.nbits)
+      return W_SmallBitsWithNext( nbits, self.intval, w_other.intval )
+
+    elif isinstance(w_other, W_IntObject):
+      intval = w_other.intval
+
+      up = get_int_mask(nbits)
+      lo = get_int_lower(nbits)
+
+      if intval < lo or intval > up:
+        raise oefmt(space.w_ValueError, "RHS value %s of <<= is too wide for LHS Bits%d!\n" \
+                                        "(Bits%d only accepts %s <= value <= %s)",
+                                        hex(intval), nbits, nbits, hex(lo), hex(up))
+
+      return W_SmallBitsWithNext( nbits, self.intval, intval & up )
+
+    elif isinstance(w_other, W_BigBits):
+      raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
+                                      "but here LHS Bits%d < RHS Bits%d.\n"
+                                      "- Suggestion: LHS <<= trunc(RHS, nbits/Type)", self.nbits, w_other.nbits )
+
+    elif isinstance(w_other, W_LongObject):
+      bigval = w_other.num
+
+      if rbigint_check_exceed_nbits( bigval, nbits ):
+        raise oefmt(space.w_ValueError, "RHS value %s of <<= is too wide for LHS Bits%d!\n" \
+                                        "(Bits%d only accepts %s <= value <= %s)",
+                                        bigval.format(BASE16, prefix='0x'), nbits, nbits,
+                                        hex(get_int_lower(nbits)), hex(get_int_mask(nbits)))
+
+      return W_SmallBitsWithNext( nbits, self.intval, bigval.int_and_( get_int_mask( self.nbits ) ).digit(0) )
+
+    else:
+      raise oefmt(space.w_TypeError, "Invalid RHS value for <<= : Must be int or Bits")
+
+  def _descr_flip(self, space):
+    raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects which has no _next", self)
+
 #-----------------------------------------------------------------------
 # Bits with next fields
 #-----------------------------------------------------------------------
@@ -972,42 +988,44 @@ class W_SmallBitsWithNext(W_SmallBits):
   def _descr_ilshift(self, space, w_other):
     from pypy.module.mamba.bigbits import W_BigBits
 
+    nbits = self.nbits
+
     if isinstance(w_other, W_SmallBits):
-      if self.nbits != w_other.nbits:
-        if self.nbits > w_other.nbits:
+      if nbits != w_other.nbits:
+        if nbits > w_other.nbits:
           raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
                                           "but here LHS Bits%d > RHS Bits%d.\n"
-                                          "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", self.nbits, w_other.nbits)
+                                          "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", nbits, w_other.nbits)
         else:
-          raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= non-blocking assignment, "
+          raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
                                           "but here LHS Bits%d < RHS Bits%d.\n"
-                                          "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", self.nbits, w_other.nbits)
-      self.next_intval = other.intval
+                                          "- Suggestion: LHS <<= trunc(RHS, nbits/Type)", nbits, w_other.nbits)
+      self.next_intval = w_other.intval
 
     elif isinstance(w_other, W_IntObject):
-      v = w_other.intval
-      bit_length = int_bit_length(v) + (v < 0)
-      if bit_length > self.nbits:
-        raise oefmt(space.w_ValueError, "Value %s is too big for Bits%d!\n"
-                                        "(%d bits are needed in two's complement.)",
-                                        v, self.nbits, bit_length )
+      intval = w_other.intval
 
-      self.next_intval = v & get_int_mask( self.nbits )
+      up = get_int_mask(nbits)
+      lo = get_int_lower(nbits)
+      if intval < lo or intval > up:
+        raise oefmt(space.w_ValueError, "RHS value %s of <<= is too wide for LHS Bits%d!\n" \
+                                        "(Bits%d only accepts %s <= value <= %s)",
+                                        hex(intval), nbits, nbits, hex(lo), hex(up))
+      self.next_intval = intval & up
 
     elif isinstance(w_other, W_BigBits):
       raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
                                       "but here LHS Bits%d < RHS Bits%d.\n"
-                                      "- Suggestion: LHS <<= trunc(RHS, nbits/Type)", self.nbits, w_other.nbits )
+                                      "- Suggestion: LHS <<= trunc(RHS, nbits/Type)", nbits, w_other.nbits )
 
     elif isinstance(w_other, W_LongObject):
-      v = w_other.num
-      bit_length = v.bit_length() + (v.sign < 0)
-      if bit_length > self.nbits:
-        raise oefmt(space.w_ValueError, "Value %s is too big for Bits%!\n"
-                                        "(%d bits are needed in two's complement.)",
-                                        v.format(BASE16), self.nbits, bit_length )
-
-      self.next_intval = v.int_and_( get_int_mask( self.nbits ) ).digit(0)
+      bigval = w_other.num
+      if rbigint_check_exceed_nbits( bigval, nbits ):
+        raise oefmt(space.w_ValueError, "RHS value %s of <<= is too wide for LHS Bits%d!\n" \
+                                        "(Bits%d only accepts %s <= value <= %s)",
+                                        bigval.format(BASE16, prefix='0x'), nbits, nbits,
+                                        hex(get_int_lower(nbits)), hex(get_int_mask(nbits)))
+      self.next_intval = bigval.int_and_( get_int_mask( nbits ) ).digit(0)
 
     else:
       raise oefmt(space.w_TypeError, "Invalid RHS value for <<= : Must be int or Bits")
@@ -1097,6 +1115,8 @@ W_AbstractBits.typedef = TypeDef("Bits",
     uint  = interp2app(W_AbstractBits.uint),
     int   = interpindirect2app(W_AbstractBits.descr_int),
 
+    # @=
+    __imatmul__ = interp2app(W_AbstractBits.descr_imatmul),
     # <<=
     __ilshift__ = interp2app(W_AbstractBits.descr_ilshift),
     _flip = interp2app(W_AbstractBits.descr_flip),
