@@ -30,9 +30,10 @@ def concat_impl(space, args):
                   "%d-th argument is of wrong type. Concat only takes Bits objects.",
                   i)
 
+  stop = nbits
+
   if nbits <= SHIFT: # arg_w.nbits must <= SHIFT
     intval = 0
-    stop = nbits
 
     for i in range(num_args):
       arg_w = args_w[i]
@@ -297,8 +298,8 @@ def write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data ):
 
         else:
           nextval = bigval.digit(curdigit)
-
-          this_nbits = SHIFT - curbit
+          bitend -= SHIFT
+          this_nbits = 8 - bitend
           curval |= (nextval & get_int_mask(bitend)) << this_nbits
           ba_data[begin] = chr(curval)
 

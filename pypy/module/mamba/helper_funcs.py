@@ -233,7 +233,7 @@ _rbigint_rshift_maskoff_retint._always_inline_ = True
 @jit.elidable
 def _rbigint_getidx( value, index ):
   wordpos = index / SHIFT
-  if wordpos > value.numdigits(): return 0
+  if wordpos >= value.numdigits(): return 0
   bitpos  = index - wordpos*SHIFT
   return (value.digit(wordpos) >> bitpos) & 1
 _rbigint_getidx._always_inline_ = True
