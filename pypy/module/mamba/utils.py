@@ -251,7 +251,8 @@ def write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data ):
 
   if isinstance(w_data, W_SmallBits):
     if w_data.nbits > (nbytes << 3):
-      raise oefmt(space.w_ValueError, "The value to write is Bits%d which is wider than the requested %d bytes.")
+      raise oefmt(space.w_ValueError, "The value to write is Bits%d which is wider than the requested %d bytes.",
+                                      w_data.nbits, nbytes )
 
     intval = w_data.intval
     while begin < end:
@@ -261,7 +262,8 @@ def write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data ):
 
   elif isinstance(w_data, W_BigBits):
     if w_data.nbits > (nbytes << 3):
-      raise oefmt(space.w_ValueError, "The value to write is Bits%d which is wider than the requested %d bytes.")
+      raise oefmt(space.w_ValueError, "The value to write is Bits%d which is wider than the requested %d bytes.",
+                                      w_data.nbits, nbytes )
 
     bigval = w_data.bigval
 

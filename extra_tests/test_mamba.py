@@ -17,7 +17,7 @@ def bits(draw):
   else:
     # big bits
     nbits = draw(strategies.integers(min_value=64, max_value=512))
-  value = draw(strategies.integers(min_value=0, max_value=2**nbits))
+  value = draw(strategies.integers(min_value=-(1<<(nbits-1)), max_value=(1<<nbits)-1))
   return Bits(nbits, value)
 
 def several_bits(n, same_bitwidth=True):
@@ -26,7 +26,7 @@ def several_bits(n, same_bitwidth=True):
       if same_bitwidth or draw(strategies.booleans()):
         # all same bitwidth
         first = draw(bits())
-        return [first] + [Bits(first.nbits, draw(strategies.integers(min_value=0, max_value=2**first.nbits)))
+        return [first] + [Bits(first.nbits, draw(strategies.integers(min_value=-(1<<(first.nbits-1)), max_value=(1<<first.nbits)-1)))
                   for i in range(n - 1)]
       return [draw(bits()) for i in range(n)]
     return several_bits()
@@ -42,7 +42,7 @@ def test_arith_commutative(bits, op):
   bits1, bits2 = bits
   res = op(bits1, bits2)
   assert res == op(bits2, bits1)  # commutativity
-  assert res == Bits(max(bits1.nbits, bits2.nbits), op(int(bits1), int(bits2)))
+  assert res == Bits(max(bits1.nbits, bits2.nbits), op(int(bits1), int(bits2)), trunc=True)
   assert op(bits1, int(bits2)) == res
   assert op(bits1, as_long(bits2)) == res
   assert op(int(bits2), bits1) == res
@@ -65,7 +65,7 @@ def test_arith_sub(bits):
 
   assert op(int(bits1), bits2) == res
   assert op(as_long(bits1), bits2) == res
-  
+
 @given(several_bits(3), strategies.sampled_from([operator.add, operator.mul, operator.or_, operator.and_, operator.xor]))
 def test_associativity(bits, op):
   bits1, bits2, bits3 = bits
@@ -90,6 +90,7 @@ def test_cmp(bits, comparators):
   bits1, bits2 = bits
   op, inv_op = comparators
   res = op(bits1, bits2)
+  print(bits1, bits2, res)
   assert res == inv_op(bits2, bits1)
 
   assert res == op(int(bits1), int(bits2))

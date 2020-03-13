@@ -11,9 +11,9 @@
 # Date   : March 10, 2020
 
 from rpython.rlib import jit
-from rpython.rlib.rbigint     import rbigint, SHIFT, NULLDIGIT, ONERBIGINT, \
-                                     NULLRBIGINT, _store_digit, _x_int_sub, \
-                                     _widen_digit, BASE16
+from rpython.rlib.rbigint import rbigint, SHIFT, NULLDIGIT, ONERBIGINT, \
+                                 NULLRBIGINT, _store_digit, _x_int_sub, \
+                                 _widen_digit, BASE16
 
 # NOTE that we should keep self.value positive after any computation:
 # - The sign of the rbigint field should always be one
@@ -47,7 +47,7 @@ get_int_mask._always_inline_ = True
 # This function check if a bigint is within [-2**(nbits-1), 2**nbits)
 # It is mostly used to check __new__, @=, <<= 's RHS bitwidth
 @jit.elidable
-def rbigint_check_exceed_nbits( v, nbits ):
+def _rbigint_check_exceed_nbits( v, nbits ):
   if v.sign == 0: return False
 
   if v.sign > 0:
@@ -83,7 +83,7 @@ def rbigint_check_exceed_nbits( v, nbits ):
 # This function check if a bigint is within [0, 2**nbits)
 # It is mostly used to check the integer operands in binary operations
 @jit.elidable
-def rbigint_invalid_binop_operand( v, nbits ):
+def _rbigint_invalid_binop_operand( v, nbits ):
   if v.sign < 0:  return True
   if v.sign == 0: return False
   # v.sign > 0
