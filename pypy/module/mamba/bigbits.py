@@ -462,6 +462,9 @@ class W_BigBits(W_AbstractBits):
         slice_nbits = stop - start
 
         if isinstance(w_other, W_SmallBits):
+          if w_other.nbits > slice_nbits:
+            raise oefmt(space.w_ValueError, "Value of type Bits%d cannot fit into "
+                        "[%d:%d](%d-bit) slice", w_other.nbits, start, stop, slice_nbits )
           self.bigval = setitem_long_int_helper( self.bigval, w_other.intval, start, stop )
 
         elif isinstance(w_other, W_IntObject):
@@ -474,6 +477,9 @@ class W_BigBits(W_AbstractBits):
           self.bigval = setitem_long_long_helper( self.bigval, other, start, stop )
 
         elif isinstance(w_other, W_BigBits):
+          if w_other.nbits > slice_nbits:
+            raise oefmt(space.w_ValueError, "Value of type Bits%d cannot fit into "
+                        "[%d:%d](%d-bit) slice", w_other.nbits, start, stop, slice_nbits )
           self.bigval = setitem_long_long_helper( self.bigval, w_other.bigval, start, stop )
 
         elif type(w_other) is W_LongObject:
