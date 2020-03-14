@@ -508,21 +508,20 @@ class W_BigBits(W_AbstractBits):
   # Miscellaneous methods for string format
   #-----------------------------------------------------------------------
 
-  # def descr_bin(self, space):
-    # w_data = space.newtext( self.bigval.format(BASE2) )
-    # return space.text_w( w_data.descr_zfill(space, self.nbits) )
+  def descr_bin(self, space):
+    w_data = space.newtext( self.bigval.format(BASE2) )
+    return w_data.descr_zfill(space, self.nbits)
 
-  # def descr_oct(self, space):
-    # w_data = space.newtext( self.bigval.format(BASE8) )
-    # return space.text_w( w_data.descr_zfill(space, (((self.nbits-1)>>1)+1)) )
+  def descr_oct(self, space):
+    w_data = space.newtext( self.bigval.format(BASE8) )
+    return w_data.descr_zfill(space, ((self.nbits-1)>>1)+1)
 
-  # def descr_hex(self, space):
-    # w_data = space.newtext( self.bigval.format(BASE16) )
-    # return space.text_w( w_data.descr_zfill(space, ((self.nbits-1)>>2)+1) )
+  def descr_hex(self, space):
+    w_data = space.newtext( self.bigval.format(BASE16) )
+    return w_data.descr_zfill(space, ((self.nbits-1)>>2)+1)
 
-  # def descr_repr(self, space):
-    # return space.newtext( "Bits%d( %s )" % (self.nbits, self.bigval.format(BASE16,prefix='0x')) )
-
+  def descr_repr(self, space):
+    return space.newtext( "Bits%d( %s )" % (self.nbits, self.bigval.format(BASE16,prefix='0x')) )
 
 #-----------------------------------------------------------------------
 # Bits with next fields

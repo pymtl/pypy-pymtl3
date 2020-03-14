@@ -305,19 +305,19 @@ class W_AbstractBits(W_Root):
 
   # Bits specific
 
-  # def descr_repr(self, space):
-    # raise NotImplementedError
+  def descr_repr(self, space):
+    raise NotImplementedError
 
-  # def descr_bin(self, space):
-    # raise NotImplementedError
+  def descr_bin(self, space):
+    raise NotImplementedError
 
-  # def descr_oct(self, space):
-    # raise NotImplementedError
+  def descr_oct(self, space):
+    raise NotImplementedError
 
   def descr_hex(self, space):
     raise NotImplementedError
 
-  # descr_str = func_with_new_name( descr_hex, 'descr_str' )
+  descr_str = func_with_new_name( descr_hex, 'descr_str' )
 
   def descr_get_nbits(self, space):
     return wrapint( space, self.nbits )
@@ -935,22 +935,21 @@ class W_SmallBits(W_AbstractBits):
   # Miscellaneous methods for string format
   #-----------------------------------------------------------------------
 
-  # def descr_bin(self, space):
-    # w_data = space.newtext( (rbigint.fromint(self.intval)).format(BASE2) )
-    # return space.text_w( w_data.descr_zfill(space, self.nbits) )
+  def descr_bin(self, space):
+    w_data = space.newtext( (rbigint.fromint(self.intval)).format(BASE2) )
+    return w_data.descr_zfill(space, self.nbits)
 
-  # def descr_oct(self, space):
-    # w_data = space.newtext( rbigint.fromint(self.intval).format(BASE8) )
-    # return space.text_w( w_data.descr_zfill(space, (((self.nbits-1)>>1)+1)) )
+  def descr_oct(self, space):
+    w_data = space.newtext( rbigint.fromint(self.intval).format(BASE8) )
+    return w_data.descr_zfill(space, ((self.nbits-1)>>1)+1)
 
-  # def descr_hex(self, space):
-    # bigval = rbigint.fromint(self.intval)
-    # w_data = space.newtext( bigval.format(BASE16) )
-    # return space.text_w( w_data.descr_zfill(space, ((self.nbits-1)>>2)+1) )
+  def descr_hex(self, space):
+    bigval = rbigint.fromint(self.intval)
+    w_data = space.newtext( bigval.format(BASE16) )
+    return w_data.descr_zfill(space, ((self.nbits-1)>>2)+1)
 
-  # def descr_repr(self, space):
-    # return space.newtext( "Bits%d( %s )" % (self.nbits, hex(self.intval)) )
-
+  def descr_repr(self, space):
+    return space.newtext( "Bits%d( %s )" % (self.nbits, hex(self.intval)) )
 
 #-----------------------------------------------------------------------
 # Bits with next fields
@@ -1033,8 +1032,8 @@ W_AbstractBits.typedef = TypeDef("Bits",
 
     # String formats
     __hash__ = interpindirect2app(W_AbstractBits.descr_hash),
-    # __repr__ = interpindirect2app(W_AbstractBits.descr_repr),
-    # __str__  = interpindirect2app(W_AbstractBits.descr_str),
+    __repr__ = interpindirect2app(W_AbstractBits.descr_repr),
+    __str__  = interpindirect2app(W_AbstractBits.descr_str),
     __getnewargs__ = interpindirect2app(W_AbstractBits.descr_getnewargs),
 
     # Value access
@@ -1101,8 +1100,8 @@ W_AbstractBits.typedef = TypeDef("Bits",
     uint  = interpindirect2app(W_AbstractBits.uint),
     int   = interpindirect2app(W_AbstractBits.descr_int),
 
-    # bin   = interpindirect2app(W_AbstractBits.descr_bin),
-    # oct   = interpindirect2app(W_AbstractBits.descr_oct),
+    bin   = interpindirect2app(W_AbstractBits.descr_bin),
+    oct   = interpindirect2app(W_AbstractBits.descr_oct),
     hex   = interpindirect2app(W_AbstractBits.descr_hex),
 
     # @=
