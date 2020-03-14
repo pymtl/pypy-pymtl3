@@ -284,6 +284,7 @@ class AppTestBits:
             for b in l:
                 assert a + b == b + a == 2
                 assert a & b == b & a == 1
+        assert mamba.Bits(64,1) + int(mamba.Bits(64, 0xffffffffffffffff )) == 0
 
     def test_add_ovf_bug(self):
         import mamba
