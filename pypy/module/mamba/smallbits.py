@@ -317,7 +317,8 @@ class W_AbstractBits(W_Root):
   def descr_hex(self, space):
     raise NotImplementedError
 
-  descr_str = func_with_new_name( descr_hex, 'descr_str' )
+  def descr_str(self, space):
+    return self.descr_hex(space)
 
   def descr_get_nbits(self, space):
     return wrapint( space, self.nbits )
