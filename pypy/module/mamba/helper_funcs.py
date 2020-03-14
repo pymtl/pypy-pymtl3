@@ -15,6 +15,8 @@ from rpython.rlib.rbigint import rbigint, SHIFT, NULLDIGIT, ONERBIGINT, \
                                  NULLRBIGINT, _store_digit, _x_int_sub, \
                                  _widen_digit, BASE16
 
+BASE2 = '01'
+
 # NOTE that we should keep self.value positive after any computation:
 # - The sign of the rbigint field should always be one
 # - Always AND integer value with mask, never store any negative int
@@ -43,6 +45,12 @@ def get_int_lower( i ):
   return -int(1<<(i-1))
 get_int_mask._always_inline_ = True
 
+#-------------------------------------------------------------------------
+# Shunning: The following functions are specialized implementations for
+# Bits arithmetics. Basically we squash arithmetic ops and ANDing mask to
+# the same function to avoid copying and also reduce the constant factor
+# based on the return type (int/rbigint).
+#-------------------------------------------------------------------------
 
 # This function check if a bigint is within [-2**(nbits-1), 2**nbits)
 # It is mostly used to check __new__, @=, <<= 's RHS bitwidth
