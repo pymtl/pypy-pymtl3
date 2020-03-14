@@ -301,7 +301,7 @@ class W_AbstractBits(W_Root):
   # Bits specific
 
   def descr_repr(self, space):
-    return space.newtext( "Bits%d( 0x%s )" % (self.nbits, space.text_w( self.descr_hex(space) ) ) )
+    return space.newtext( "Bits%d(0x%s)" % (self.nbits, space.text_w( self.descr_hex(space) ) ) )
 
   def descr_bin(self, space):
     raise NotImplementedError
