@@ -13,12 +13,52 @@ class AppTestBits:
         b = mamba.Bits(8, 0b10110010)
         assert b[0] == mamba.Bits(1, 0)
         assert b[1] == mamba.Bits(1, 1)
+        assert b[mamba.Bits(1, 1)] == mamba.Bits(1, 1)
+        assert b[mamba.Bits(100, 1)] == mamba.Bits(1, 1)
         assert b[2] == mamba.Bits(1, 0)
         assert b[3] == mamba.Bits(1, 0)
         assert b[4] == mamba.Bits(1, 1)
         assert b[5] == mamba.Bits(1, 1)
         assert b[6] == mamba.Bits(1, 0)
         assert b[7] == mamba.Bits(1, 1)
+
+        assert b[0:2] == mamba.Bits(2, 0b10)
+        assert b[mamba.Bits(1, 0):2] == mamba.Bits(2, 0b10)
+        assert b[0:mamba.Bits(3, 2)] == mamba.Bits(2, 0b10)
+        assert b[mamba.Bits(100, 0):2] == mamba.Bits(2, 0b10)
+        assert b[0:mamba.Bits(300, 2)] == mamba.Bits(2, 0b10)
+
+        with raises(IndexError):
+            b[0:3:2]
+
+    def test_bigbits_getitem(self):
+        import mamba
+        b = mamba.Bits(80, 0b10110010)
+        assert b[0] == mamba.Bits(1, 0)
+        assert b[1] == mamba.Bits(1, 1)
+        assert b[mamba.Bits(1, 1)] == mamba.Bits(1, 1)
+        assert b[mamba.Bits(100, 1)] == mamba.Bits(1, 1)
+        assert b[2] == mamba.Bits(1, 0)
+        assert b[3] == mamba.Bits(1, 0)
+        assert b[4] == mamba.Bits(1, 1)
+        assert b[5] == mamba.Bits(1, 1)
+        assert b[6] == mamba.Bits(1, 0)
+        assert b[7] == mamba.Bits(1, 1)
+
+        assert b[0:2] == mamba.Bits(2, 0b10)
+        assert b[mamba.Bits(1, 0):2] == mamba.Bits(2, 0b10)
+        assert b[0:mamba.Bits(3, 2)] == mamba.Bits(2, 0b10)
+        assert b[mamba.Bits(100, 0):2] == mamba.Bits(2, 0b10)
+        assert b[0:mamba.Bits(300, 2)] == mamba.Bits(2, 0b10)
+
+        initval = 0b10110010 << 70 | 0b110101011
+        b = mamba.Bits(80, initval)
+        assert b[0:70] == mamba.Bits(70, 0b110101011)
+        assert b[5:75] == mamba.Bits(70, (initval >> 5) & (2 ** 70 - 1))
+
+        with raises(IndexError):
+            b[0:3:2]
+
 
     def test_bits_getitem_bug(self):
         import mamba

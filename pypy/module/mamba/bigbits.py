@@ -52,7 +52,7 @@ class W_BigBits(W_AbstractBits):
         else:
           return W_BigBits( slice_nbits, _rbigint_rshift_maskoff( self.bigval, start, slice_nbits ) )
       else:
-        raise oefmt(space.w_ValueError, "Bits slice cannot have step." )
+        raise oefmt(space.w_IndexError, "Index cannot contain step" )
     else:
       index = _get_index(space, self.nbits, w_index)
       return W_SmallBits( 1, _rbigint_getidx( self.bigval, index ) )
