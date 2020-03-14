@@ -42,7 +42,7 @@ def test_arith_commutative(bits, op):
   bits1, bits2 = bits
   res = op(bits1, bits2)
   assert res == op(bits2, bits1)  # commutativity
-  assert res == Bits(max(bits1.nbits, bits2.nbits), op(int(bits1), int(bits2)), trunc=True)
+  assert res == Bits(bits1.nbits, op(int(bits1), int(bits2)), trunc_int=True)
   assert op(bits1, int(bits2)) == res
   assert op(bits1, as_long(bits2)) == res
   assert op(int(bits2), bits1) == res
@@ -59,7 +59,7 @@ def test_arith_sub(bits):
   op = operator.sub
   # not commutative
   res = op(bits1, bits2)
-  assert res == Bits(max(bits1.nbits, bits2.nbits), op(int(bits1), int(bits2)))
+  assert res == Bits(max(bits1.nbits, bits2.nbits), op(int(bits1), int(bits2)), trunc_int=True)
   assert op(bits1, int(bits2)) == res
   assert op(bits1, as_long(bits2)) == res
 
@@ -90,7 +90,6 @@ def test_cmp(bits, comparators):
   bits1, bits2 = bits
   op, inv_op = comparators
   res = op(bits1, bits2)
-  print(bits1, bits2, res)
   assert res == inv_op(bits2, bits1)
 
   assert res == op(int(bits1), int(bits2))
