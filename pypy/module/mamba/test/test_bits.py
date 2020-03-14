@@ -164,7 +164,6 @@ class AppTestBits:
         input = Bits(465, 0x00095700000000000000003f950000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f5d )
         input[363: 441] = Bits(78, 0x000000000000000000b0)
 
-
     def test_bits_new(self):
         import mamba
         with raises(ValueError):
@@ -184,9 +183,10 @@ class AppTestBits:
         def make_long(x): return x + 2 ** 100 - 2 ** 100
         b = mamba.Bits(10, 18)
         assert 20 - b == 2
-        assert 1 - b == 1024 + 1 - 18
         assert make_long(20) - b == 2
         assert make_long(1) - b == 1024 + 1 - 18
+        with raises(ValueError):
+          assert -1 - b == 1024 - 1 - 18 # rsub also only allow positive int
 
         b = mamba.Bits(100, 18)
         assert 20 - b == 2

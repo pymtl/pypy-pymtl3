@@ -520,8 +520,7 @@ class W_BigBits(W_AbstractBits):
     w_data = space.newtext( self.bigval.format(BASE16) )
     return w_data.descr_zfill(space, ((self.nbits-1)>>2)+1)
 
-  def descr_repr(self, space):
-    return space.newtext( "Bits%d( %s )" % (self.nbits, self.bigval.format(BASE16,prefix='0x')) )
+  descr_str = func_with_new_name( descr_hex, 'descr_str' )
 
 #-----------------------------------------------------------------------
 # Bits with next fields

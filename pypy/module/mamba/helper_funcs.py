@@ -81,6 +81,8 @@ def _rbigint_check_exceed_nbits( v, nbits ):
   nbits -= 1
   numwords = nbits / SHIFT
   msw      = 1 << (nbits - numwords*SHIFT)
+
+  numwords += 1
   vsize    = v.numdigits()
   if vsize < numwords:
     return False
@@ -92,6 +94,7 @@ def _rbigint_check_exceed_nbits( v, nbits ):
 # It is mostly used to check the integer operands in binary operations
 @jit.elidable
 def _rbigint_invalid_binop_operand( v, nbits ):
+  print v, nbits
   if v.sign < 0:  return True
   if v.sign == 0: return False
   # v.sign > 0

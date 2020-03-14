@@ -185,128 +185,123 @@ class W_AbstractBits(W_Root):
 
   # value can be negative! Be extremely cautious with _rb_maskoff_high
   @staticmethod
-  @unwrap_spec(w_value=WrappedDefault(0), w_trunc_int=WrappedDefault(0))
-  def descr_new( space, w_objtype, w_nbits, w_value, w_trunc_int ):
+  @unwrap_spec(nbits=int, w_value=WrappedDefault(0), w_trunc_int=WrappedDefault(0))
+  def descr_new( space, w_objtype, nbits, w_value, w_trunc_int ):
     from pypy.module.mamba.bigbits import W_BigBits
 
-    if type(w_nbits) is W_IntObject:
-      nbits = w_nbits.intval
+    if nbits <= SHIFT:
+      if nbits < 1:
+        raise oefmt(space.w_ValueError, "Only support 1 <= nbits < 1024, not %d", nbits)
 
-      if nbits <= SHIFT:
-        if nbits < 1:
-          raise oefmt(space.w_ValueError, "Only support 1 <= nbits < 1024, not %d", w_nbits.intval)
+      ret = space.allocate_instance( W_SmallBits, w_objtype )
+      ret.nbits = nbits
 
-        ret = space.allocate_instance( W_SmallBits, w_objtype )
-        ret.nbits = nbits
+      if   isinstance(w_value, W_IntObject):
+        intval = w_value.intval
+        up = get_int_mask(nbits)
 
-        if   isinstance(w_value, W_IntObject):
-          intval = w_value.intval
-          up = get_int_mask(nbits)
+        if isinstance(w_trunc_int, W_IntObject):
+          if not w_trunc_int.intval:
+            lo = get_int_lower(nbits)
 
-          if isinstance(w_trunc_int, W_IntObject):
-            if not w_trunc_int.intval:
-              lo = get_int_lower(nbits)
-
-              if intval < lo or intval > up:
-                raise oefmt(space.w_ValueError, "Value %s is too big for Bits%d!\n"
-                                                "(Bits%d only accepts %s <= value <= %s)",
-                                                hex(intval), nbits, nbits, hex(lo), hex(up))
-            ret.intval = intval & up
-          else:
-            raise oefmt(space.w_ValueError, "trunc_int can only be boolean/int, not '%T'", w_trunc_int)
-
-        elif isinstance(w_value, W_SmallBits):
-          if nbits != w_value.nbits:
-            if nbits < w_value.nbits:
-              raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too wide to be used to construct Bits%d!\n"
-                                              "- Suggestion: directly use trunc( value, %d/Bits%d )",
-                                              w_value.nbits, nbits, nbits, nbits )
-            else:
-              raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too narrow to be used to construct Bits%d!\n"
-                                              "- Suggestion: directly use zext/sext( value, %d/Bits%d )",
-                                              w_value.nbits, nbits, nbits, nbits )
-          ret.intval = w_value.intval
-
-        elif isinstance(w_value, W_BigBits):
-          raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too wide to be used to construct Bits%d!\n"
-                                          "- Suggestion: directly use trunc( value, %d/Bits%d )",
-                                          w_value.nbits, nbits, nbits, nbits )
-
-        elif isinstance(w_value, W_LongObject):
-          bigval = w_value.num
-
-          if isinstance(w_trunc_int, W_IntObject):
-            if not w_trunc_int.intval:
-              if _rbigint_check_exceed_nbits( bigval, nbits ):
-                raise oefmt(space.w_ValueError, "Value %s is too big for Bits%d!\n"
-                                                "(Bits%d only accepts %s <= value <= %s)",
-                                                bigval.format(BASE16, prefix='0x'), nbits, nbits,
-                                                get_long_lower(nbits).format(BASE16, prefix='0x'),
-                                                get_long_mask(nbits).format(BASE16, prefix='0x'))
-            ret.intval = bigval.int_and_( get_int_mask(nbits) ).digit(0)
-          else:
-            raise oefmt(space.w_ValueError, "trunc_int can only be boolean, not '%T'", w_trunc_int)
-
+            if intval < lo or intval > up:
+              raise oefmt(space.w_ValueError, "Value %s is too big for Bits%d!\n"
+                                              "(Bits%d only accepts %s <= value <= %s)",
+                                              hex(intval), nbits, nbits, hex(lo), hex(up))
+          ret.intval = intval & up
         else:
-          raise oefmt(space.w_TypeError, "Value used to construct Bits%d "
-                      "must be int/long/Bits " # or whatever has __int__, "
-                      "not '%T'", nbits, w_value)
+          raise oefmt(space.w_ValueError, "trunc_int can only be boolean/int, not '%T'", w_trunc_int)
 
-      else: # nbits > SHIFT
-        if nbits > 1024:
-          raise oefmt(space.w_ValueError, "Only support 1 <= nbits < 1024, not %d", w_nbits.intval)
-
-        ret = space.allocate_instance( W_BigBits, w_objtype )
-        ret.nbits = nbits
-
-        if   isinstance(w_value, W_IntObject):
-          # definitely fit in BigBits
-          ret.bigval = get_long_mask(nbits).int_and_( w_value.intval )
-
-        elif isinstance(w_value, W_SmallBits):
-          raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too narrow to be used to construct Bits%d!\n"
-                                          "- Suggestion: directly use zext/sext( value, %d/Bits%d )",
-                                          w_value.nbits, nbits, nbits, nbits )
-
-        elif isinstance(w_value, W_BigBits):
-          if nbits != w_value.nbits:
-            if nbits < w_value.nbits:
-              raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too wide to be used to construct Bits%d!\n"
-                                              "- Suggestion: directly use trunc( value, %d/Bits%d )",
-                                              w_value.nbits, nbits, nbits, nbits )
-            else:
-              raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too narrow to be used to construct Bits%d!\n"
-                                              "- Suggestion: directly use zext/sext( value, %d/Bits%d )",
-                                              w_value.nbits, nbits, nbits, nbits )
-          ret.bigval = w_value.bigval
-
-        elif isinstance(w_value, W_LongObject):
-          bigval = w_value.num
-
-          if isinstance(w_trunc_int, W_IntObject):
-            if not w_trunc_int.intval:
-              if _rbigint_check_exceed_nbits( bigval, nbits ):
-                raise oefmt(space.w_ValueError, "Value %s is too big for Bits%d!\n"
-                                                "(Bits%d only accepts %s <= value <= %s)",
-                                                bigval.format(BASE16, prefix='0x'), nbits, nbits,
-                                                get_long_lower(nbits).format(BASE16, prefix='0x'),
-                                                get_long_mask(nbits).format(BASE16, prefix='0x'))
-            ret.bigval = bigval.and_( get_long_mask( nbits ) )
+      elif isinstance(w_value, W_SmallBits):
+        if nbits != w_value.nbits:
+          if nbits < w_value.nbits:
+            raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too wide to be used to construct Bits%d!\n"
+                                            "- Suggestion: directly use trunc( value, %d/Bits%d )",
+                                            w_value.nbits, nbits, nbits, nbits )
           else:
-            raise oefmt(space.w_ValueError, "trunc_int can only be boolean, not '%T'", w_trunc_int)
-        else:
-          raise oefmt(space.w_TypeError, "Value used to construct Bits%d "
-                      "must be int/long/Bits" # or whatever has __int__, "
-                      "not '%T'", nbits, w_value)
+            raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too narrow to be used to construct Bits%d!\n"
+                                            "- Suggestion: directly use zext/sext( value, %d/Bits%d )",
+                                            w_value.nbits, nbits, nbits, nbits )
+        ret.intval = w_value.intval
 
-    else:
-      raise oefmt(space.w_TypeError, "'nbits' must be an int, not '%T'", w_nbits )
+      elif isinstance(w_value, W_BigBits):
+        raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too wide to be used to construct Bits%d!\n"
+                                        "- Suggestion: directly use trunc( value, %d/Bits%d )",
+                                        w_value.nbits, nbits, nbits, nbits )
+
+      elif isinstance(w_value, W_LongObject):
+        bigval = w_value.num
+
+        if isinstance(w_trunc_int, W_IntObject):
+          if not w_trunc_int.intval:
+            if _rbigint_check_exceed_nbits( bigval, nbits ):
+              raise oefmt(space.w_ValueError, "Value %s is too big for Bits%d!\n"
+                                              "(Bits%d only accepts %s <= value <= %s)",
+                                              bigval.format(BASE16, prefix='0x'), nbits, nbits,
+                                              get_long_lower(nbits).format(BASE16, prefix='0x'),
+                                              get_long_mask(nbits).format(BASE16, prefix='0x'))
+          ret.intval = bigval.int_and_( get_int_mask(nbits) ).digit(0)
+        else:
+          raise oefmt(space.w_ValueError, "trunc_int can only be boolean, not '%T'", w_trunc_int)
+
+      else:
+        raise oefmt(space.w_TypeError, "Value used to construct Bits%d "
+                    "must be int/long/Bits " # or whatever has __int__, "
+                    "not '%T'", nbits, w_value)
+
+    else: # nbits > SHIFT
+      if nbits >= 1024:
+        raise oefmt(space.w_ValueError, "Only support 1 <= nbits < 1024, not %d", nbits)
+
+      ret = space.allocate_instance( W_BigBits, w_objtype )
+      ret.nbits = nbits
+
+      if   isinstance(w_value, W_IntObject):
+        # definitely fit in BigBits
+        ret.bigval = get_long_mask(nbits).int_and_( w_value.intval )
+
+      elif isinstance(w_value, W_SmallBits):
+        raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too narrow to be used to construct Bits%d!\n"
+                                        "- Suggestion: directly use zext/sext( value, %d/Bits%d )",
+                                        w_value.nbits, nbits, nbits, nbits )
+
+      elif isinstance(w_value, W_BigBits):
+        if nbits != w_value.nbits:
+          if nbits < w_value.nbits:
+            raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too wide to be used to construct Bits%d!\n"
+                                            "- Suggestion: directly use trunc( value, %d/Bits%d )",
+                                            w_value.nbits, nbits, nbits, nbits )
+          else:
+            raise oefmt(space.w_ValueError, "The Bits%d object on RHS is too narrow to be used to construct Bits%d!\n"
+                                            "- Suggestion: directly use zext/sext( value, %d/Bits%d )",
+                                            w_value.nbits, nbits, nbits, nbits )
+        ret.bigval = w_value.bigval
+
+      elif isinstance(w_value, W_LongObject):
+        bigval = w_value.num
+
+        if isinstance(w_trunc_int, W_IntObject):
+          if not w_trunc_int.intval:
+            if _rbigint_check_exceed_nbits( bigval, nbits ):
+              raise oefmt(space.w_ValueError, "Value %s is too big for Bits%d!\n"
+                                              "(Bits%d only accepts %s <= value <= %s)",
+                                              bigval.format(BASE16, prefix='0x'), nbits, nbits,
+                                              get_long_lower(nbits).format(BASE16, prefix='0x'),
+                                              get_long_mask(nbits).format(BASE16, prefix='0x'))
+          ret.bigval = bigval.and_( get_long_mask( nbits ) )
+        else:
+          raise oefmt(space.w_ValueError, "trunc_int can only be boolean, not '%T'", w_trunc_int)
+      else:
+        raise oefmt(space.w_TypeError, "Value used to construct Bits%d "
+                    "must be int/long/Bits" # or whatever has __int__, "
+                    "not '%T'", nbits, w_value)
+
     return ret
 
   # Bits specific
 
   def descr_repr(self, space):
-    raise NotImplementedError
+    return space.newtext( "Bits%d( 0x%s )" % (self.nbits, space.text_w( self.descr_hex(space) ) ) )
 
   def descr_bin(self, space):
     raise NotImplementedError
@@ -949,8 +944,7 @@ class W_SmallBits(W_AbstractBits):
     w_data = space.newtext( bigval.format(BASE16) )
     return w_data.descr_zfill(space, ((self.nbits-1)>>2)+1)
 
-  def descr_repr(self, space):
-    return space.newtext( "Bits%d( %s )" % (self.nbits, hex(self.intval)) )
+  descr_str = func_with_new_name( descr_hex, 'descr_str' )
 
 #-----------------------------------------------------------------------
 # Bits with next fields
