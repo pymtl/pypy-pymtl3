@@ -471,7 +471,7 @@ class W_SmallBits(W_AbstractBits):
         lsw = other.digit(0)
         if lsw < 0 or lsw > 1:
           raise oefmt(space.w_ValueError, "Value %s is too big for the 1-bit slice", other.format(BASE16, prefix='0x') )
-        self.intval = (self.intval & ~(1 << lsw)) | (lsw << index)
+        self.intval = (self.intval & ~(1 << index)) | (lsw << index)
       else:
         raise oefmt(space.w_TypeError, "Please pass in int/long/Bits value. -- setitem #4" )
 

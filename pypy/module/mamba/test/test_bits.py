@@ -27,8 +27,15 @@ class AppTestBits:
 
     def test_bits_setitem(self):
         import mamba
+        def make_long(x): return x + 2 ** 100 - 2 ** 100
         b = mamba.Bits(8, 0b10110010)
         b[0] = 1
+        assert b == 0b10110011
+        b = mamba.Bits(8, 0b10110010)
+        b[0] = make_long(1)
+        assert b == 0b10110011
+        b = mamba.Bits(8, 0b10110010)
+        b[0] = mamba.Bits(1, 1)
         assert b == 0b10110011
         with raises(ValueError):
             b[0] = 12
