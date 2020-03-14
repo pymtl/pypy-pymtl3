@@ -65,7 +65,7 @@ class AppTestBits:
         b = mamba.Bits(100, 1)[63] # used to crash
         assert b == 0
 
-    def test_bits_setitem(self):
+    def test_smallbits_setitem(self):
         import mamba
         def make_long(x): return x + 2 ** 100 - 2 ** 100
         b = mamba.Bits(8, 0b10110010)
@@ -78,8 +78,91 @@ class AppTestBits:
         b[0] = mamba.Bits(1, 1)
         assert b == 0b10110011
         with raises(ValueError):
+            b[0] = mamba.Bits(80, 1)
+
+    def test_bigbits_setitem(self):
+        import mamba
+        def make_long(x): return x + 2 ** 100 - 2 ** 100
+        b = mamba.Bits(80, 0b10110010)
+        b[0] = 1
+        assert b == 0b10110011
+        b = mamba.Bits(80, 0b10110010)
+        b[0] = mamba.Bits(1, 1)
+        assert b == 0b10110011
+        b = mamba.Bits(80, 0b10110010)
+        b[0] = make_long(1)
+        assert b == 0b10110011
+
+        with raises(ValueError):
             b[0] = 12
 
+    def test_smallbits_setslice(self):
+        import mamba
+        def make_long(x): return x + 2 ** 100 - 2 ** 100
+        b = mamba.Bits(8, 0b10110001)
+        b[0:2] = 0b10
+        assert b == 0b10110010
+
+        b = mamba.Bits(8, 0b10110010)
+        b[0:2] = 0b1
+        assert b == 0b10110001
+
+        b = mamba.Bits(8, 0b10110001)
+        b[0:2] = make_long(0b10)
+        assert b == 0b10110010
+
+        b = mamba.Bits(8, 0b10110001)
+        b[0:2] = mamba.Bits(2, 0b10)
+        assert b == 0b10110010
+
+        with raises(ValueError):
+            b[0:2] = mamba.Bits(10, 0)
+
+    def test_bigbits_setslice(self):
+        import mamba
+        def make_long(x): return x + 2 ** 100 - 2 ** 100
+        b = mamba.Bits(80, 0b10110001)
+        b[0:2] = 0b10
+        assert b == 0b10110010
+
+        b = mamba.Bits(80, 0b10110010)
+        b[0:2] = 0b1
+        assert b == 0b10110001
+
+        b = mamba.Bits(80, 0b10110001)
+        b[0:2] = make_long(0b10)
+        assert b == 0b10110010
+
+        b = mamba.Bits(80, 0b10110001)
+        b[0:3] = -2
+        assert b == 0b10110110
+
+        b = mamba.Bits(80, 0b10110001)
+        b[0:3] = make_long(-2)
+        assert b == 0b10110110
+
+        b = mamba.Bits(80, 0b10110001)
+        b[0:2] = mamba.Bits(2, 0b10)
+        assert b == 0b10110010
+
+        with raises(ValueError):
+            b[0:2] = mamba.Bits(10, 0)
+
+        b = mamba.Bits(150, 0)
+        b[0:80] = mamba.Bits(80, 4)
+        assert b == 4
+
+        b = mamba.Bits(150, 0)
+        b[0:80] = mamba.Bits(80, 4 << 60)
+        assert b == 4 << 60
+
+        with raises(ValueError):
+            b[0:80] = mamba.Bits(100, 0)
+
+    def test_setitem_crash(self):
+        from mamba import Bits
+        input = Bits(465, 0x00095700000000000000003f950000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f5d )
+        input[363: 441] = Bits(78, 0x000000000000000000b0)
     def test_bits_rsub(self):
         import mamba
         b = mamba.Bits(10, 18)
