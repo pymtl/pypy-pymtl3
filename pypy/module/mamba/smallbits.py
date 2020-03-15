@@ -453,9 +453,9 @@ class W_SmallBits(W_AbstractBits):
 
       elif isinstance(w_other, W_IntObject):
         other = w_other.intval
-        if other < 0 or other > 1:
+        if other < -1 or other > 1:
           raise oefmt(space.w_ValueError, "Value %s is too big for the 1-bit slice", hex(other) )
-        self.intval = (self.intval & ~(1 << index)) | (other << index)
+        self.intval = (self.intval & ~(1 << index)) | ((other & 1) << index)
 
       elif isinstance(w_other, W_BigBits):
         raise oefmt(space.w_ValueError, "Cannot fit a Bits%d object into 1-bit slice", w_other.nbits )
@@ -465,9 +465,9 @@ class W_SmallBits(W_AbstractBits):
         if other.numdigits() > 1:
           raise oefmt(space.w_ValueError, "Value %s is too big for the 1-bit slice", other.format(BASE16, prefix='0x') )
         lsw = other.digit(0)
-        if lsw < 0 or lsw > 1:
+        if lsw > 1: # -1 and 1 are both 1 here
           raise oefmt(space.w_ValueError, "Value %s is too big for the 1-bit slice", other.format(BASE16, prefix='0x') )
-        self.intval = (self.intval & ~(1 << index)) | (lsw << index)
+        self.intval = (self.intval & ~(1 << index)) | lsw << index)
       else:
         raise oefmt(space.w_TypeError, "Please pass in int/long/Bits value. -- setitem #4" )
 
