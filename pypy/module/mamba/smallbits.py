@@ -31,12 +31,12 @@ def _get_slice_range(space, nbits, w_start, w_stop):
     try:
       start = w_start.bigval.toint()
     except OverflowError:
-      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d", rbigint.str(w_start.bigval), nbits )
+      raise oefmt(space.w_IndexError, "Index [%s] too big for Bits%d", rbigint.str(w_start.bigval), nbits )
   elif isinstance(w_start, W_LongObject):
     try:
       start = w_start.num.toint()
     except OverflowError:
-      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d",
+      raise oefmt(space.w_IndexError, "Index [%s] too big for Bits%d",
                                       rbigint.str(w_start.num), nbits )
   else:
     raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for slice's start." )
@@ -49,18 +49,18 @@ def _get_slice_range(space, nbits, w_start, w_stop):
     try:
       stop = w_stop.bigval.toint()
     except OverflowError:
-      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d", rbigint.str(w_stop.bigval), nbits )
+      raise oefmt(space.w_IndexError, "Index [%s] too big for Bits%d", rbigint.str(w_stop.bigval), nbits )
   elif type(w_stop) is W_LongObject:
     try:
       stop = w_stop.num.toint()
     except OverflowError:
-      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d", rbigint.str(w_stop.num), nbits )
+      raise oefmt(space.w_IndexError, "Index [%s] too big for Bits%d", rbigint.str(w_stop.num), nbits )
   else:
     raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for slice's stop." )
 
-  if start >= stop: raise oefmt(space.w_ValueError, "Invalid range: start [%d] >= stop [%d]", start, stop )
-  if start < 0:     raise oefmt(space.w_ValueError, "Negative start: [%d]", start )
-  if stop > nbits:  raise oefmt(space.w_ValueError, "Stop [%d] too big for Bits%d", stop, nbits )
+  if start >= stop: raise oefmt(space.w_IndexError, "Invalid range: start [%d] >= stop [%d]", start, stop )
+  if start < 0:     raise oefmt(space.w_IndexError, "Negative start: [%d]", start )
+  if stop > nbits:  raise oefmt(space.w_IndexError, "Stop [%d] too big for Bits%d", stop, nbits )
   return start, stop
 
 def _get_index(space, nbits, w_index):
@@ -72,17 +72,17 @@ def _get_index(space, nbits, w_index):
     try:
       index = w_index.bigval.toint()
     except OverflowError:
-      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d", rbigint.str(w_index.bigval), nbits )
+      raise oefmt(space.w_IndexError, "Index [%s] too big for Bits%d", rbigint.str(w_index.bigval), nbits )
   elif type(w_index) is W_LongObject:
     try:
       index = w_index.num.toint()
     except OverflowError:
-      raise oefmt(space.w_ValueError, "Index [%s] too big for Bits%d", rbigint.str(w_index.num), nbits )
+      raise oefmt(space.w_IndexError, "Index [%s] too big for Bits%d", rbigint.str(w_index.num), nbits )
   else:
     raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for slice index" )
 
-  if index < 0:       raise oefmt(space.w_ValueError, "Negative index: [%d]", index )
-  if index >= nbits:  raise oefmt(space.w_ValueError, "Index [%d] too big for Bits%d", index, nbits )
+  if index < 0:       raise oefmt(space.w_IndexError, "Negative index: [%d]", index )
+  if index >= nbits:  raise oefmt(space.w_IndexError, "Index [%d] too big for Bits%d", index, nbits )
   return index
 
 cmp_opp = {
@@ -509,6 +509,9 @@ class W_SmallBits(W_AbstractBits):
       if opname == 'eq':
         # Match cpython behavior
         return W_SmallBits( 1, 0 )
+      elif opname == 'ne':
+        # Match cpython behavior
+        return W_SmallBits( 1, 1 )
 
       raise oefmt(space.w_TypeError, "Please compare two Bits/int/long objects" )
 

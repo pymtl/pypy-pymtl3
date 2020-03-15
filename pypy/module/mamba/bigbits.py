@@ -189,6 +189,9 @@ class W_BigBits(W_AbstractBits):
       if opname == 'eq':
         # Match cpython behavior
         return W_SmallBits( 1, 0 )
+      elif opname == 'ne':
+        # Match cpython behavior
+        return W_SmallBits( 1, 1 )
 
       raise oefmt(space.w_TypeError, "Please compare two Bits/int/long objects" )
 
