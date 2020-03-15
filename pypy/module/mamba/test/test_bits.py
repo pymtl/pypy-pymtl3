@@ -445,3 +445,8 @@ class AppTestBits:
         assert b256 == mamba.Bits(256,42)
         b256._flip()
         assert b256 == mamba.Bits(256,43)
+
+    def test_concat(self):
+        from mamba import Bits, concat
+        assert concat(Bits(2, 1), Bits(2, 0b10)) == Bits(4, 0b0110)
+        assert concat(Bits(1, 1), Bits(64, 0)) == Bits(65, 1 << 64)
