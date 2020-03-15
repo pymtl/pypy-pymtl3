@@ -20,7 +20,7 @@ def bitify(nbits, value):
     return bits
 
 
-
+@example((257, rbigint.fromlong(1 << (63 * 2)), rbigint.fromlong(1 << 63), 0, 127))
 @given(setitem_inputs())
 def test_setitem_long_long_helper(input):
     nbits, value, other, start, stop = input
