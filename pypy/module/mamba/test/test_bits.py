@@ -450,3 +450,4 @@ class AppTestBits:
         from mamba import Bits, concat
         assert concat(Bits(2, 1), Bits(2, 0b10)) == Bits(4, 0b0110)
         assert concat(Bits(1, 1), Bits(64, 0)) == Bits(65, 1 << 64)
+        assert concat(Bits(1, 1), Bits(128, 1<<64)) == Bits(129, (1 << 128) | (1 << 64))
