@@ -178,6 +178,15 @@ class AppTestBits:
         for i in range(1, 100):
             assert mamba.Bits(i, 0).nbits == i
 
+    def test_sub_bug(self):
+        from mamba import Bits
+        def make_long(x): return x + 2 ** 100 - 2 ** 100
+        for bitwidth in [2, 8, 32, 64, 100]:
+            res = Bits(bitwidth, 0) - Bits(bitwidth, 1)
+            assert res == Bits(bitwidth, 2 ** bitwidth - 1)
+            assert Bits(bitwidth, 0) - 1 == res
+            assert Bits(bitwidth, 0) - make_long(1) == res
+
     def test_bits_rsub(self):
         import mamba
         def make_long(x): return x + 2 ** 100 - 2 ** 100

@@ -240,11 +240,12 @@ class W_BigBits(W_AbstractBits):
           return W_BigBits( nbits, z )
 
         elif isinstance(w_other, W_LongObject):
-          z = llop( x, w_other.num )
-          if _rbigint_invalid_binop_operand( z, nbits ):
+          y = w_other.num
+          if _rbigint_invalid_binop_operand( y, nbits ):
             raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
-                                            "Suggestion: 0 <= x <= %s", z.format(BASE16, prefix='0x'), nbits,
+                                            "Suggestion: 0 <= x <= %s", y.format(BASE16, prefix='0x'), nbits,
                                             get_long_mask(nbits).format(BASE16, prefix='0x'))
+          z = llop( x, y )
 
           if opname == "sub": z = z.and_( get_long_mask(nbits) )
           else:               z = _rbigint_maskoff_high( z, nbits )
