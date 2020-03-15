@@ -1,7 +1,7 @@
 from hypothesis import strategies, given, example, assume
 from rpython.rlib.rbigint     import rbigint, SHIFT, BASE8, BASE16
 from pypy.module.mamba.helper_funcs import (setitem_long_long_helper,
-        _rbigint_rshift_maskoff, _rbigint_rshift_maskoff_retint)
+        _rbigint_rshift_maskoff, _rbigint_rshift_maskoff_retint, _rbigint_setidx)
 
 @strategies.composite
 def setitem_inputs(draw):
@@ -42,8 +42,8 @@ def test_setitem_long_long_helper(input):
 
 @strategies.composite
 def rshift_maskoff_inputs(draw):
-    nbits = draw(strategies.integers(64, 1024))
     # only big bits for now
+    nbits = draw(strategies.integers(64, 1024))
     value = rbigint.fromlong(draw(strategies.integers(min_value=0, max_value=(1<<nbits)-1)))
     shamt = draw(strategies.integers(0, nbits - 1))
     masklen = draw(strategies.integers(1, nbits - shamt))
@@ -52,7 +52,6 @@ def rshift_maskoff_inputs(draw):
 @given(rshift_maskoff_inputs())
 def test_rshift_maskoff(input):
     nbits, value, shamt, masklen = input
-    print nbits, value, shamt, masklen
     bits = bitify(nbits, value)
     resbits = bits[shamt: shamt + masklen]
     res = _rbigint_rshift_maskoff(value, shamt, masklen)
@@ -60,3 +59,22 @@ def test_rshift_maskoff(input):
     if masklen < SHIFT:
         res = _rbigint_rshift_maskoff_retint(value, shamt, masklen)
         cmpbits(res, resbits)
+
+@strategies.composite
+def setidx_inputs(draw):
+    # only big bits for now
+    nbits = draw(strategies.integers(64, 1024))
+    value = rbigint.fromlong(draw(strategies.integers(min_value=0, max_value=(1<<nbits)-1)))
+    pos = draw(strategies.integers(0, nbits - 1))
+    return nbits, value, pos
+
+@given(setidx_inputs())
+def test_setidx(input):
+    nbits, value, pos = input
+    bits = bitify(nbits, value)
+    for bit in [0, 1]:
+        oldval = bits[pos]
+        bits[pos] = str(bit)
+        res = _rbigint_setidx(value, pos, bit)
+        cmpbits(res, bits)
+        bits[pos] = oldval
