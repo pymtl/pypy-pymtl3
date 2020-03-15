@@ -42,7 +42,7 @@ def test_arith_commutative(bits, op):
   bits1, bits2 = bits
   res = op(bits1, bits2)
   assert res == op(bits2, bits1)  # commutativity
-  assert res == Bits(bits1.nbits, op(int(bits1), int(bits2)), trunc_int=True)
+  assert res == Bits(max(bits1.nbits, bits2.nbits), op(int(bits1), int(bits2)), trunc_int=True)
   assert op(bits1, int(bits2)) == res
   assert op(bits1, as_long(bits2)) == res
   assert op(int(bits2), bits1) == res

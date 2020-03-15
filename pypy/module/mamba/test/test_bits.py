@@ -293,6 +293,7 @@ class AppTestBits:
             for b in l:
                 assert a + b == b + a == 2
                 assert a & b == b & a == 1
+        assert mamba.Bits(64,1) + int(mamba.Bits(64, 0xffffffffffffffff )) == 0
 
     def test_add_ovf_bug(self):
         import mamba
@@ -313,13 +314,13 @@ class AppTestBits:
     def test_bits_repr(self):
         import mamba, sys
         b = mamba.Bits(8,42)
-        assert repr(b) == 'Bits8( 0x2a )'
+        assert repr(b) == 'Bits8(0x2a)'
         b = mamba.Bits(32,42)
-        assert repr(b) == 'Bits32( 0x2a )'
+        assert repr(b) == 'Bits32(0x2a)'
         b = mamba.Bits(32,48879)
-        assert repr(b) == 'Bits32( 0xbeef )'
+        assert repr(b) == 'Bits32(0xbeef)'
         b = mamba.Bits(512,13907095861846720239)
-        assert repr(b) == 'Bits512( 0xc0ffee00deadbeef )'
+        assert repr(b) == 'Bits512(0xc0ffee00deadbeef)'
 
     def test_ilshift_create_bits_with_next(self):
         import mamba, sys

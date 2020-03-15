@@ -133,10 +133,10 @@ class W_BigBits(W_AbstractBits):
 
       elif isinstance(w_other, W_IntObject):
         other = w_other.intval
-        if other < 0 or other > 1:
+        if other < -1 or other > 1:
           raise oefmt(space.w_ValueError, "Value %s is too big for the 1-bit slice", hex(other) )
 
-        self.bigval = _rbigint_setidx( self.bigval, index, other )
+        self.bigval = _rbigint_setidx( self.bigval, index, other & 1 )
 
       elif isinstance(w_other, W_BigBits):
         raise oefmt(space.w_ValueError, "Cannot fit a Bits%d object into 1-bit slice", w_other.nbits )
@@ -145,11 +145,9 @@ class W_BigBits(W_AbstractBits):
         other = w_other.num
         if other.numdigits() > 1:
           raise oefmt(space.w_ValueError, "Value %s is too big for the 1-bit slice", other.format(BASE16, prefix='0x') )
-
         lsw = other.digit(0)
-        if lsw < 0 or lsw > 1:
+        if lsw > 1: # -1 and 1 are both 1 here
           raise oefmt(space.w_ValueError, "Value %s is too big for the 1-bit slice", other.format(BASE16, prefix='0x') )
-
         self.bigval = _rbigint_setidx( self.bigval, index, lsw )
       else:
         raise oefmt(space.w_TypeError, "Please pass in int/long/Bits value. -- setitem #4" )
@@ -189,6 +187,9 @@ class W_BigBits(W_AbstractBits):
       if opname == 'eq':
         # Match cpython behavior
         return W_SmallBits( 1, 0 )
+      elif opname == 'ne':
+        # Match cpython behavior
+        return W_SmallBits( 1, 1 )
 
       raise oefmt(space.w_TypeError, "Please compare two Bits/int/long objects" )
 
@@ -245,8 +246,8 @@ class W_BigBits(W_AbstractBits):
             raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
                                             "Suggestion: 0 <= x <= %s", y.format(BASE16, prefix='0x'), nbits,
                                             get_long_mask(nbits).format(BASE16, prefix='0x'))
-          z = llop( x, y )
 
+          z = llop( x, y )
           if opname == "sub": z = z.and_( get_long_mask(nbits) )
           else:               z = _rbigint_maskoff_high( z, nbits )
           return W_BigBits( nbits, z )
