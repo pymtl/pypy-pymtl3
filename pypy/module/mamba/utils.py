@@ -266,6 +266,7 @@ def write_bytearray_bits_impl( space, w_arr, w_addr, w_nbytes, w_data ):
           ba_data[begin] = chr(curval)
 
           curval = nextval >> bitend
+          curbit = bitend
           begin += 1
 
   else:

@@ -39,7 +39,7 @@ def int_bit_length( val ):
 
 mask = rbigint([NULLDIGIT], 1, 1)
 LONG_MASKS = [ mask ]
-for i in xrange(1024):
+for i in xrange(1025):
   mask = mask.int_mul(2).int_add( 1 )
   LONG_MASKS.append( mask )
 
@@ -86,6 +86,7 @@ def _get_slice_range(space, nbits, w_start, w_stop):
 
   if type(w_start) is W_IntObject:       start = w_start.intval
   elif isinstance(w_start, W_SmallBits): start = w_start.intval
+  elif space.is_w(w_start, space.w_None): pass
   elif isinstance(w_start, W_BigBits):
     try:
       start = w_start.bigval.toint()
@@ -102,9 +103,10 @@ def _get_slice_range(space, nbits, w_start, w_stop):
   else:
     raise oefmt(space.w_TypeError, "Please pass in int/Bits variables for slice's start." )
 
-  stop = 0
+  stop = nbits
   if type(w_stop) is W_IntObject:       stop = w_stop.intval
   elif isinstance(w_stop, W_SmallBits): stop = w_stop.intval
+  elif space.is_w(w_stop, space.w_None): pass
   elif isinstance(w_stop, W_BigBits):
     try:
       stop = w_stop.bigval.toint()
@@ -275,7 +277,7 @@ class W_AbstractBits(W_Root):
 
       if nbits <= SHIFT:
         if nbits < 1:
-          raise oefmt(space.w_ValueError, "1 <= 'nbits' <= 512, not %d", w_nbits.intval)
+          raise oefmt(space.w_ValueError, "1 <= 'nbits' <= 1024, not %d", w_nbits.intval)
 
         ret = space.allocate_instance( W_SmallBits, w_objtype )
         ret.nbits = nbits
@@ -291,8 +293,8 @@ class W_AbstractBits(W_Root):
                       "not '%T'", nbits, w_value)
 
       else: # nbits > SHIFT
-        if nbits > 512:
-          raise oefmt(space.w_ValueError, "1 <= 'nbits' <= 512, not %d", w_nbits.intval)
+        if nbits > 1024:
+          raise oefmt(space.w_ValueError, "1 <= 'nbits' <= 1024, not %d", w_nbits.intval)
 
         ret = space.allocate_instance( W_BigBits, w_objtype )
         ret.nbits = nbits
