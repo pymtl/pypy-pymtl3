@@ -373,6 +373,7 @@ def _rbigint_lshift_maskoff( value, shamt, masklen ):
 
 # setitem helpers that returns a new rbigint with new slice
 
+# Shunning: CALL THEM AFTER CHECKING other fits into [start:stop]
 # Must return rbigint that cannot fit into int
 @jit.elidable
 def setitem_long_long_helper( value, other, start, stop ):
@@ -385,6 +386,8 @@ def setitem_long_long_helper( value, other, start, stop ):
     if other.numdigits() == 1:
       return setitem_long_int_helper( value, other.digit(0), start, stop )
 
+  # After the two above checks, we have made sure other has more than one
+  # digit and wordstart must < wordstop
   vsize = value.numdigits()
   other = other.lshift( start ) # lshift first to align two rbigints
   osize = other.numdigits()
@@ -392,12 +395,13 @@ def setitem_long_long_helper( value, other, start, stop ):
   # Now other must be long, wordstart must < wordstop
   wordstart = start / SHIFT
 
-  # vsize <= wordstart < wordstop, concatenate
-  if wordstart >= vsize:
+  # 1. vsize <= wordstart < wordstop, concatenate
+  if vsize <= wordstart:
     return rbigint(value._digits[:vsize] + other._digits[vsize:], 1, osize )
 
-  wordstop = stop / SHIFT # wordstop >= osize-1
-  # (wordstart <) wordstop < vsize
+  wordstop = stop / SHIFT
+
+  # 2. wordstart < wordstop < vsize
   if wordstop < vsize:
     ret = rbigint( value._digits[:vsize], 1, vsize )
 
@@ -410,23 +414,25 @@ def setitem_long_long_helper( value, other, start, stop ):
 
     i = wordstart+1
 
-    if osize < wordstop:
+    # wordstart < osize <= wordstop < vsize
+    if osize <= wordstop:
       while i < osize:
         ret.setdigit( i, other.digit(i) )
         i += 1
       while i < wordstop:
         ret._digits[i] = NULLDIGIT
         i += 1
-    else: # osize >= wordstop
+    # wordstart < wordstop < osize < vsize
+    else:
       while i < wordstop:
         ret.setdigit( i, other.digit(i) )
         i += 1
 
-    # do stop
-    bitstop  = stop - wordstop*SHIFT
-    if bitstop:
-      masked_val = ret.digit(wordstop) & ~get_int_mask(bitstop) #hi
-      ret.setdigit( wordstop, other.digit(wordstop) | masked_val ) # lo|hi
+      # do stop
+      bitstop  = stop - wordstop*SHIFT
+      if bitstop:
+        masked_val = ret.digit(wordstop) & ~get_int_mask(bitstop) #hi
+        ret.setdigit( wordstop, other.digit(wordstop) | masked_val ) # lo|hi
 
     return ret
 

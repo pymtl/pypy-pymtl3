@@ -164,6 +164,11 @@ class AppTestBits:
         input = Bits(465, 0x00095700000000000000003f950000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f5d )
         input[363: 441] = Bits(78, 0x000000000000000000b0)
 
+    def test_setitem_crash(self):
+        from mamba import Bits
+        input = Bits(465, 0x00095700000000000000003f950000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f5d )
+        input[363: 441] = Bits(78, 0x000000000000000000b0)
+
     def test_bits_new(self):
         import mamba
         with raises(ValueError):
@@ -216,9 +221,17 @@ class AppTestBits:
         assert b << mamba.Bits(10, 100) == 0
         assert b << mamba.Bits(10, 1) == 2
         assert b << mamba.Bits(10, 4) == 1 << 4
-        assert b << mamba.Bits(100, 100) == 0
-        assert b << mamba.Bits(100, 1) == 2
-        assert b << mamba.Bits(100, 4) == 1 << 4
+
+        with raises(ValueError):
+          b << 1024
+        with raises(ValueError):
+          b << -1
+        with raises(ValueError):
+          assert b << mamba.Bits(100, 100) == 0
+        with raises(ValueError):
+          assert b << mamba.Bits(100, 1) == 2
+        with raises(ValueError):
+          assert b << mamba.Bits(100, 4) == 1 << 4
 
         b = mamba.Bits(10, 0b10000)
         assert b >> 4 == 1
@@ -230,9 +243,16 @@ class AppTestBits:
         assert b >> mamba.Bits(10, 4) == 1
         assert b >> mamba.Bits(10, 10) == 0
         assert b >> mamba.Bits(10, 2) == 0b100
-        assert b >> mamba.Bits(100, 4) == 1
-        assert b >> mamba.Bits(100, 10) == 0
-        assert b >> mamba.Bits(100, 2) == 0b100
+        with raises(ValueError):
+          b >> 1024
+        with raises(ValueError):
+          b >> -1
+        with raises(ValueError):
+          assert b >> mamba.Bits(100, 4) == 1
+        with raises(ValueError):
+          assert b >> mamba.Bits(100, 10) == 0
+        with raises(ValueError):
+          assert b >> mamba.Bits(100, 2) == 0b100
 
     def test_bigbits_shift(self):
         import mamba
@@ -244,9 +264,17 @@ class AppTestBits:
         assert b << make_long(100) == 0
         assert b << make_long(1) == 2
         assert b << make_long(4) == 1 << 4
-        assert b << mamba.Bits(10, 100) == 0
-        assert b << mamba.Bits(10, 1) == 2
-        assert b << mamba.Bits(10, 4) == 1 << 4
+
+        with raises(ValueError):
+          b << (2**100)
+        with raises(ValueError):
+          b << -1
+        with raises(ValueError):
+          assert b << mamba.Bits(10, 100) == 0
+        with raises(ValueError):
+          assert b << mamba.Bits(10, 1) == 2
+        with raises(ValueError):
+          assert b << mamba.Bits(10, 4) == 1 << 4
         assert b << mamba.Bits(100, 100) == 0
         assert b << mamba.Bits(100, 1) == 2
         assert b << mamba.Bits(100, 4) == 1 << 4
@@ -258,13 +286,22 @@ class AppTestBits:
         assert b >> make_long(4) == 1
         assert b >> make_long(10) == 0
         assert b >> make_long(2) == 0b100
-        assert b >> mamba.Bits(10, 4) == 1
-        assert b >> mamba.Bits(10, 10) == 0
-        assert b >> mamba.Bits(10, 2) == 0b100
+
+        with raises(ValueError):
+          b >> (2**100)
+        with raises(ValueError):
+          b >> -1
+        with raises(ValueError):
+          assert b >> mamba.Bits(10, 4) == 1
+        with raises(ValueError):
+          assert b >> mamba.Bits(10, 10) == 0
+        with raises(ValueError):
+          assert b >> mamba.Bits(10, 2) == 0b100
         assert b >> mamba.Bits(100, 4) == 1
         assert b >> mamba.Bits(100, 10) == 0
         assert b >> mamba.Bits(100, 2) == 0b100
-        assert b >> (1 << 2000) == 0
+        with raises(ValueError):
+          assert b >> (1 << 2000) == 0
 
     def test_invert(self):
         import mamba
@@ -276,24 +313,56 @@ class AppTestBits:
     def test_mixed_cmp(self):
         import mamba
         def make_long(x): return x + 2 ** 100 - 2 ** 100
-        l1 = [1, make_long(1), mamba.Bits(10, 1), mamba.Bits(100, 1)]
-        l2 = [5, make_long(5), mamba.Bits(10, 5), mamba.Bits(100, 5)]
+        l1 = [1, make_long(1), mamba.Bits(100, 1)]
+        l2 = [5, make_long(5), mamba.Bits(100, 5)]
         for a in l1:
             for b in l1:
                 assert a == b
             for b in l2:
                 assert a != b
                 assert b != a
+        l1 = [1, make_long(1), mamba.Bits(10, 1)]
+        l2 = [5, make_long(5), mamba.Bits(10, 5)]
+        for a in l1:
+            for b in l1:
+                assert a == b
+            for b in l2:
+                assert a != b
+                assert b != a
+        with raises(ValueError):
+          mamba.Bits(10,1) == mamba.Bits(11,1)
+        with raises(ValueError):
+          mamba.Bits(10,1) == mamba.Bits(111,1)
+        with raises(ValueError):
+          mamba.Bits(110,1) == mamba.Bits(111,1)
 
     def test_mixed_arithmetic(self):
         import mamba
         def make_long(x): return x + 2 ** 100 - 2 ** 100
-        l = [mamba.Bits(10, 1), mamba.Bits(100, 1), 1, make_long(1)]
+        l = [mamba.Bits(100, 1), 1, make_long(1)]
+        for a in l:
+            for b in l:
+                assert a + b == b + a == 2
+                assert a & b == b & a == 1
+        l = [mamba.Bits(10, 1), 1, make_long(1)]
         for a in l:
             for b in l:
                 assert a + b == b + a == 2
                 assert a & b == b & a == 1
         assert mamba.Bits(64,1) + int(mamba.Bits(64, 0xffffffffffffffff )) == 0
+
+        with raises(ValueError):
+          mamba.Bits(10,1) + mamba.Bits(11,1)
+        with raises(ValueError):
+          mamba.Bits(10,1) + mamba.Bits(111,1)
+        with raises(ValueError):
+          mamba.Bits(110,1) + mamba.Bits(111,1)
+        with raises(ValueError):
+          mamba.Bits(10,1) & mamba.Bits(11,1)
+        with raises(ValueError):
+          mamba.Bits(10,1) & mamba.Bits(111,1)
+        with raises(ValueError):
+          mamba.Bits(110,1) & mamba.Bits(111,1)
 
     def test_add_ovf_bug(self):
         import mamba
@@ -316,11 +385,17 @@ class AppTestBits:
         b = mamba.Bits(8,42)
         assert repr(b) == 'Bits8(0x2a)'
         b = mamba.Bits(32,42)
-        assert repr(b) == 'Bits32(0x2a)'
+        assert repr(b) == 'Bits32(0x0000002a)'
         b = mamba.Bits(32,48879)
-        assert repr(b) == 'Bits32(0xbeef)'
+        assert repr(b) == 'Bits32(0x0000beef)'
         b = mamba.Bits(512,13907095861846720239)
-        assert repr(b) == 'Bits512(0xc0ffee00deadbeef)'
+        assert repr(b) == 'Bits512(0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0ffee00deadbeef)'
+
+    def test_bits_bin_oct_hex(self):
+        import mamba, sys
+        assert mamba.Bits(15,35).bin() == '0b000000000100011'
+        assert mamba.Bits(15,35).oct() == '0o00043'
+        assert mamba.Bits(15,35).hex() == '0x0023'
 
     def test_ilshift_create_bits_with_next(self):
         import mamba, sys

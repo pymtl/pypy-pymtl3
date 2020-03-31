@@ -34,7 +34,7 @@ class W_BigBits(W_AbstractBits):
     self.nbits  = nbits
     self.bigval = bigval
 
-  def descr_copy(self):
+  def _descr_copy(self):
     return W_BigBits( self.nbits, self.bigval )
 
   #-----------------------------------------------------------------------
@@ -117,7 +117,7 @@ class W_BigBits(W_AbstractBits):
             self.bigval = setitem_long_long_helper( self.bigval, other, start, stop )
 
       else:
-        raise oefmt(space.w_ValueError, "Bits slice cannot have step." )
+        raise oefmt(space.w_IndexError, "Index cannot contain step" )
 
     else:
       index = _get_index(space, self.nbits, w_index)
@@ -165,10 +165,14 @@ class W_BigBits(W_AbstractBits):
       x = self.bigval
 
       if isinstance(w_other, W_BigBits):
+        if self.nbits != w_other.nbits:
+          raise oefmt(space.w_ValueError, "Operands of '%s' operation must have matching bitwidth, "
+                                          "but here Bits%d != Bits%d.\n", opname, self.nbits, w_other.nbits )
         return W_SmallBits( 1, llop( x, w_other.bigval ) )
 
       elif isinstance(w_other, W_SmallBits):
-        return W_SmallBits( 1, liop( x, w_other.intval ) )
+        raise oefmt(space.w_ValueError, "Operands of '%s' operation must have matching bitwidth, "
+                                        "but here Bits%d != Bits%d.\n", opname, self.nbits, w_other.nbits )
 
       elif isinstance(w_other, W_IntObject): # int MUST fit Bits64+
         return W_SmallBits( 1, llop( x, get_long_mask(self.nbits).int_and_( w_other.intval ) ) )
@@ -222,14 +226,10 @@ class W_BigBits(W_AbstractBits):
 
       if ovf:
         if isinstance(w_other, W_BigBits):
+          if nbits != w_other.nbits:
+            raise oefmt(space.w_ValueError, "Operands of '%s' operation must have matching bitwidth, "
+                                            "but here Bits%d != Bits%d.\n", opname, nbits, w_other.nbits )
           z = llop( x, w_other.bigval )
-          res_nbits = max(nbits, w_other.nbits)
-          if opname == "sub": z = z.and_( get_long_mask(res_nbits) )
-          else:               z = _rbigint_maskoff_high( z, res_nbits )
-          return W_BigBits( res_nbits, z )
-
-        elif isinstance(w_other, W_SmallBits):
-          z = liop( x, w_other.intval )
           if opname == "sub": z = z.and_( get_long_mask(nbits) )
           else:               z = _rbigint_maskoff_high( z, nbits )
           return W_BigBits( nbits, z )
@@ -252,14 +252,18 @@ class W_BigBits(W_AbstractBits):
           else:               z = _rbigint_maskoff_high( z, nbits )
           return W_BigBits( nbits, z )
 
+        elif isinstance(w_other, W_SmallBits):
+          raise oefmt(space.w_ValueError, "Operands of '%s' operation must have matching bitwidth, "
+                                          "but here Bits%d != Bits%d.\n", opname, nbits, w_other.nbits )
+
       # and, or, xor, no overflow
       # opname should be in COMMUTATIVE_OPS
       else:
         if   isinstance(w_other, W_BigBits):
-          return W_BigBits( max(nbits, w_other.nbits), llop( x, w_other.bigval ) )
-
-        elif isinstance(w_other, W_SmallBits):
-          return W_BigBits( nbits, liop( x, w_other.intval ) )
+          if nbits != w_other.nbits:
+            raise oefmt(space.w_ValueError, "Operands of '%s' operation must have matching bitwidth, "
+                                            "but here Bits%d != Bits%d.\n", opname, nbits, w_other.nbits )
+          return W_BigBits( nbits, llop( x, w_other.bigval ) )
 
         elif isinstance(w_other, W_IntObject): # int MUST fit Bits64+
           return W_BigBits( nbits, liop( x, w_other.intval ) )
@@ -272,6 +276,9 @@ class W_BigBits(W_AbstractBits):
                                             get_long_mask(nbits).format(BASE16, prefix='0x'))
           return W_BigBits( nbits, llop( x, y ) )
 
+        elif isinstance(w_other, W_SmallBits):
+          raise oefmt(space.w_ValueError, "Operands of '%s' operation must have matching bitwidth, "
+                                          "but here Bits%d != Bits%d.\n", opname, nbits, w_other.nbits )
       raise oefmt(space.w_TypeError, "Please do %s between Bits and Bits/int/long objects", opname)
 
     if opname in COMMUTATIVE_OPS:
@@ -318,17 +325,31 @@ class W_BigBits(W_AbstractBits):
 
     x = self.bigval
 
-    if isinstance(w_other, W_SmallBits):
-      return W_BigBits( self.nbits, x.rshift( w_other.intval ) )
-
-    elif isinstance(w_other, W_IntObject):
-      return W_BigBits( self.nbits, x.rshift( w_other.intval ) )
+    if isinstance(w_other, W_IntObject):
+      shamt = w_other.intval
+      if shamt < 0: # int must be in bigbits range
+        raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
+                                        "Suggestion: 0 <= x <= %s", hex(shamt), self.nbits,
+                                        get_long_mask(self.nbits).format(BASE16, prefix='0x'))
+      return W_BigBits( self.nbits, x.rshift( shamt ) )
 
     elif isinstance(w_other, W_BigBits):
+      if self.nbits != w_other.nbits:
+        raise oefmt(space.w_ValueError, "Operands of '>>' (rshift) operation must have matching bitwidth, "
+                                        "but here Bits%d != Bits%d.\n", self.nbits, w_other.nbits )
       return W_BigBits( self.nbits, _rbigint_rshift( x, w_other.bigval ) )
 
     elif type(w_other) is W_LongObject:
-      return W_BigBits( self.nbits, _rbigint_rshift( x, w_other.num ) )
+      big = w_other.num
+      if _rbigint_invalid_binop_operand( big, self.nbits ):
+        raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
+                                        "Suggestion: 0 <= x <= %s", big.format(BASE16, prefix='0x'), self.nbits,
+                                        get_long_mask(self.nbits).format(BASE16, prefix='0x'))
+      return W_BigBits( self.nbits, _rbigint_rshift( x, big ) )
+
+    elif isinstance(w_other, W_SmallBits):
+      raise oefmt(space.w_ValueError, "Operands of '>>' (rshift) operation must have matching bitwidth, "
+                                      "but here Bits%d != Bits%d.\n", self.nbits, w_other.nbits )
 
     raise oefmt(space.w_TypeError, "Please do rshift between <Bits, Bits/int/long> objects" )
 
@@ -336,14 +357,18 @@ class W_BigBits(W_AbstractBits):
 
     x = self.bigval
 
-    if isinstance(w_other, W_SmallBits):
+    if isinstance(w_other, W_IntObject):
       shamt = w_other.intval
+      if shamt < 0: # int must be in bigbits range
+        raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
+                                        "Suggestion: 0 <= x <= %s", hex(shamt), self.nbits,
+                                        get_long_mask(self.nbits).format(BASE16, prefix='0x'))
       return W_BigBits( self.nbits, _rbigint_lshift_maskoff( x, shamt, self.nbits ) )
 
-    elif isinstance(w_other, W_IntObject):
-      return W_BigBits( self.nbits, _rbigint_lshift_maskoff( x, w_other.intval, self.nbits ) )
-
     elif isinstance(w_other, W_BigBits):
+      if self.nbits != w_other.nbits:
+        raise oefmt(space.w_ValueError, "Operands of '<<' (lshift) operation must have matching bitwidth, "
+                                        "but here Bits%d != Bits%d.\n", self.nbits, w_other.nbits )
       shamt = w_other.bigval
       if shamt.numdigits() > 1: return W_BigBits( self.nbits, NULLRBIGINT ) # rare
       shamt = shamt.digit(0)
@@ -351,9 +376,17 @@ class W_BigBits(W_AbstractBits):
 
     elif type(w_other) is W_LongObject:
       shamt = w_other.num
+      if _rbigint_invalid_binop_operand( shamt, self.nbits ):
+        raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
+                                        "Suggestion: 0 <= x <= %s", shamt.format(BASE16, prefix='0x'), self.nbits,
+                                        get_long_mask(self.nbits).format(BASE16, prefix='0x'))
       if shamt.numdigits() > 1: return W_BigBits( self.nbits, NULLRBIGINT ) # rare
       shamt = shamt.digit(0)
       return W_BigBits( self.nbits, _rbigint_lshift_maskoff( x, shamt, self.nbits ) )
+
+    elif isinstance(w_other, W_SmallBits):
+      raise oefmt(space.w_ValueError, "Operands of '<<' (lshift) operation must have matching bitwidth, "
+                                      "but here Bits%d != Bits%d.\n", self.nbits, w_other.nbits )
 
     raise oefmt(space.w_TypeError, "Please do lshift between <Bits, Bits/int/long> objects" )
 
@@ -512,17 +545,19 @@ class W_BigBits(W_AbstractBits):
 
   def descr_bin(self, space):
     w_data = space.newtext( self.bigval.format(BASE2) )
-    return w_data.descr_zfill(space, self.nbits)
+    return space.newtext("0b").descr_add( space, w_data.descr_zfill(space, self.nbits) )
 
   def descr_oct(self, space):
     w_data = space.newtext( self.bigval.format(BASE8) )
-    return w_data.descr_zfill(space, ((self.nbits-1)>>1)+1)
+    return space.newtext("0o").descr_add( space, w_data.descr_zfill(space, ((self.nbits-1)/3)+1) )
 
   def descr_hex(self, space):
     w_data = space.newtext( self.bigval.format(BASE16) )
-    return w_data.descr_zfill(space, ((self.nbits-1)>>2)+1)
+    return space.newtext("0x").descr_add( space, w_data.descr_zfill(space, ((self.nbits-1)/4)+1) )
 
-  descr_str = func_with_new_name( descr_hex, 'descr_str' )
+  def descr_str(self, space):
+    w_data = space.newtext( self.bigval.format(BASE16) )
+    return w_data.descr_zfill(space, ((self.nbits-1)/4)+1)
 
 #-----------------------------------------------------------------------
 # Bits with next fields
@@ -540,7 +575,7 @@ class W_BigBitsWithNext(W_BigBits):
   # def descr_setitem(self, space, w_index, w_other):
     # raise oefmt(space.w_TypeError, "You shouldn't do x[a:b]=y on flip-flop")
 
-  def descr_copy(self):
+  def _descr_copy(self):
     return W_BigBitsWithNext( self.nbits, self.bigval, self.next_bigval )
 
   def _descr_ilshift(self, space, w_other):
