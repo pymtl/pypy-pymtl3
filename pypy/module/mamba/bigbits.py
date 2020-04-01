@@ -294,32 +294,42 @@ class W_BigBits(W_AbstractBits):
     return descr_binop, descr_rbinop
 
   # Special rsub ..
-  def descr_rsub( self, space, w_other ):
-    llop = getattr( rbigint, "sub" )
-    y = self.bigval
-    nbits = self.nbits
+  def _make_descr_rbinop_opname(opname):
+    llop = getattr( rbigint, opname )
 
-    if isinstance(w_other, W_IntObject):  # int MUST fit Bits64+
-      z = llop( rbigint.fromint(w_other.intval), y )
-      z = z.and_( get_long_mask(nbits) )
-      return W_BigBits( nbits, z )
+    @func_renamer('descr_r' + opname)
+    def descr_rbinop(self, space, w_other):
+      y = self.bigval
+      nbits = self.nbits
 
-    elif type(w_other) is W_LongObject:
-      x = w_other.num
-      if _rbigint_invalid_binop_operand( x, nbits ):
-        raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
-                                        "Suggestion: 0 <= x <= %s", x.format(BASE16, prefix='0x'), nbits,
-                                        get_long_mask(nbits).format(BASE16, prefix='0x'))
-      z = llop( x, y )
-      return W_BigBits( nbits, z.and_( get_long_mask(nbits) ) )
+      if isinstance(w_other, W_IntObject):  # int MUST fit Bits64+
+        z = llop( rbigint.fromint(w_other.intval), y )
+        z = z.and_( get_long_mask(nbits) )
+        return W_BigBits( nbits, z )
+
+      elif type(w_other) is W_LongObject:
+        x = w_other.num
+        if _rbigint_invalid_binop_operand( x, nbits ):
+          raise oefmt(space.w_ValueError, "Integer %s is not a valid binop operand with Bits%d!\n"
+                                          "Suggestion: 0 <= x <= %s", x.format(BASE16, prefix='0x'), nbits,
+                                          get_long_mask(nbits).format(BASE16, prefix='0x'))
+        z = llop( x, y )
+        return W_BigBits( nbits, z.and_( get_long_mask(nbits) ) )
+    return descr_rbinop
 
   descr_add, descr_radd = _make_descr_binop_opname('add')
-  descr_sub, _          = _make_descr_binop_opname('sub')
   descr_mul, descr_rmul = _make_descr_binop_opname('mul')
+  descr_sub, _          = _make_descr_binop_opname('sub')
+  descr_floordiv, _     = _make_descr_binop_opname('floordiv')
+  descr_mod, _          = _make_descr_binop_opname('mod')
 
   descr_and, descr_rand = _make_descr_binop_opname('and', ovf=False)
   descr_or, descr_ror   = _make_descr_binop_opname('or', ovf=False)
   descr_xor, descr_rxor = _make_descr_binop_opname('xor', ovf=False)
+
+  descr_rsub      = _make_descr_rbinop_opname('sub')
+  descr_rfloordiv = _make_descr_rbinop_opname('floordiv')
+  descr_rmod      = _make_descr_rbinop_opname('mod')
 
   def descr_rshift(self, space, w_other):
 

@@ -59,7 +59,6 @@ class AppTestBits:
         with raises(IndexError):
             b[0:3:2]
 
-
     def test_bits_getitem_bug(self):
         import mamba
         b = mamba.Bits(100, 1)[63] # used to crash
@@ -330,11 +329,11 @@ class AppTestBits:
                 assert a != b
                 assert b != a
         with raises(ValueError):
-          mamba.Bits(10,1) == mamba.Bits(11,1)
+            mamba.Bits(10,1) == mamba.Bits(11,1)
         with raises(ValueError):
-          mamba.Bits(10,1) == mamba.Bits(111,1)
+            mamba.Bits(10,1) == mamba.Bits(111,1)
         with raises(ValueError):
-          mamba.Bits(110,1) == mamba.Bits(111,1)
+            mamba.Bits(110,1) == mamba.Bits(111,1)
 
     def test_mixed_arithmetic(self):
         import mamba
@@ -352,22 +351,88 @@ class AppTestBits:
         assert mamba.Bits(64,1) + int(mamba.Bits(64, 0xffffffffffffffff )) == 0
 
         with raises(ValueError):
-          mamba.Bits(10,1) + mamba.Bits(11,1)
+            mamba.Bits(10,1) + mamba.Bits(11,1)
         with raises(ValueError):
-          mamba.Bits(10,1) + mamba.Bits(111,1)
+            mamba.Bits(10,1) + mamba.Bits(111,1)
         with raises(ValueError):
-          mamba.Bits(110,1) + mamba.Bits(111,1)
+            mamba.Bits(110,1) + mamba.Bits(111,1)
         with raises(ValueError):
-          mamba.Bits(10,1) & mamba.Bits(11,1)
+            mamba.Bits(10,1) & mamba.Bits(11,1)
         with raises(ValueError):
-          mamba.Bits(10,1) & mamba.Bits(111,1)
+            mamba.Bits(10,1) & mamba.Bits(111,1)
         with raises(ValueError):
-          mamba.Bits(110,1) & mamba.Bits(111,1)
+            mamba.Bits(110,1) & mamba.Bits(111,1)
 
     def test_add_ovf_bug(self):
         import mamba
         b = mamba.Bits(1, 1)
         assert b + b == 0
+
+    def test_floordiv(self):
+        import mamba
+        x = mamba.Bits( 4, 5 )
+        y = mamba.Bits( 4, 4 )
+        assert x // y == 1
+        assert x // mamba.Bits(4, 4) == 1
+        assert x // 4 == 1
+        y = mamba.Bits( 4, 6 )
+        assert x // y == 0
+        assert x // 6 == 0
+        assert 6 // x == 1
+        with raises( ValueError ):
+            x // -1
+        with raises( ValueError ):
+            x // 100000000000000000000000000
+
+        with raises( ValueError ):
+          a = mamba.Bits(4,3) // mamba.Bits(3,1)
+
+    def test_rfloordiv(self):
+        import mamba
+        x = mamba.Bits(4, 3)
+        y = 8
+        z = y // x
+        assert z.nbits == 4 and z.uint() == 2
+        y = 16
+        with raises( ValueError ):
+            z = y // x
+
+        x = mamba.Bits(400, 3**100)
+        y = 2**300
+        z = y // x
+        assert z.nbits == 400 and z.uint() == 3952512273801159033450488434333219932310210
+        y = 2**400
+        with raises( ValueError ):
+            z = y // x
+
+    def test_mod(self):
+        import mamba
+        x = mamba.Bits( 4, 5 )
+        y = mamba.Bits( 4, 4 )
+        assert x % y == 1
+        assert x % mamba.Bits(4, 4) == 1
+        assert x % 4 == 1
+        y = mamba.Bits( 4, 6 )
+        assert x % y == 5
+        assert x % 6 == 5
+        assert 6 % x == 1
+        with raises( ValueError ):
+            x % -1
+        with raises( ValueError ):
+            x % 100000000000000000000000000
+
+        with raises( ValueError ):
+          a = mamba.Bits(4,3) % mamba.Bits(3,1)
+
+    def test_rmod(self):
+        import mamba
+        x = mamba.Bits(4, 3)
+        y = 8
+        z = y % x
+        assert z.nbits == 4 and z.uint() == 2
+        y = 16
+        with raises( ValueError ):
+            z = y % x
 
     def test_bits_str(self):
         import mamba, sys
