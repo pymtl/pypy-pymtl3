@@ -460,7 +460,7 @@ class Function(W_Root):
         self.w_module = space.w_None
 
     def fget_func_code(self, space):
-        return self.code
+        return self.getcode()
 
     def fset_func_code(self, space, w_code):
         from pypy.interpreter.pycode import PyCode
