@@ -1,24 +1,21 @@
 from cffi import FFI, VerificationError
 import os
+import sys
 
 version_str = '''
     static const int NCURSES_VERSION_MAJOR;
     static const int NCURSES_VERSION_MINOR;
 '''
 
-version = (0, 0)
 def find_library(options):
-    global version
     for library in options:
         ffi = FFI()
         ffi.cdef(version_str)
         ffi.set_source("_curses_cffi_check", version_str, libraries=[library])
         try:
-            ffi.compile()
-            import _curses_cffi_check
-            lib = _curses_cffi_check.lib
-            version = (lib.NCURSES_VERSION_MAJOR, lib.NCURSES_VERSION_MINOR)
-        except VerificationError as e:
+            # Check that the link succeeds
+            ffi.compile(verbose=1)
+        except (VerificationError) as e:
             e_last = e
             continue
         else:
@@ -34,6 +31,12 @@ def find_curses_dir_and_name():
             return base, 'ncursesw'
         if os.path.exists(os.path.join(base, 'include', 'ncurses')):
             return base, 'ncurses'
+        if sys.platform == 'darwin':
+            return '', None
+        if os.path.exists(os.path.join(base, 'lib', 'libncursesw.so')):
+            return base, 'ncursesw'
+        if os.path.exists(os.path.join(base, 'lib', 'libncurses.so')):
+            return base, 'ncurses'
     return '', None
 
 base, name = find_curses_dir_and_name()
@@ -41,12 +44,14 @@ if base:
     include_dirs = [os.path.join(base, 'include', name)]
     library_dirs = [os.path.join(base, 'lib')]
     libs = [name, name.replace('ncurses', 'panel')]
+    print('using {} from {}'.format(name, base))
 else:
     include_dirs = []
     library_dirs = []
     libs = [find_library(['ncursesw', 'ncurses']),
                 find_library(['panelw', 'panel']),
            ]
+    print('using {} from general compiler paths'.format(libs[0]))
 
 ffi = FFI()
 ffi.set_source("_curses_cffi", """
@@ -385,7 +390,7 @@ int panel_hidden(const PANEL *);
 void _m_getsyx(int *yx);
 """)
 
-if version > (5, 7):
+if 'ncursesw' in libs:
     ffi.cdef("""
 typedef int... wint_t;
 int wget_wch(WINDOW *, wint_t *);
