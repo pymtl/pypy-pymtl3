@@ -357,6 +357,9 @@ class W_AbstractBits(W_Root):
   def descr_clone(self):
     return self._descr_copy()
 
+  def descr_to_bits(self):
+    return self
+
   def descr_getitem(self, space, w_index):
     raise NotImplementedError
 
@@ -859,11 +862,6 @@ class W_SmallBits(W_AbstractBits):
                                         hex(intval), nbits, nbits, hex(lo), hex(up))
       self.intval = intval & up
 
-    elif isinstance(w_other, W_BigBits):
-      raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= blocking assignment, "
-                                      "but here LHS Bits%d < RHS Bits%d.\n"
-                                      "- Suggestion: LHS @= trunc(RHS, nbits/Type)", nbits, w_other.nbits )
-
     elif isinstance(w_other, W_LongObject):
       bigval = w_other.num
 
@@ -874,29 +872,30 @@ class W_SmallBits(W_AbstractBits):
                                         hex(get_int_lower(nbits)), hex(get_int_mask(nbits)))
       self.intval = bigval.int_and_( get_int_mask( nbits ) ).digit(0)
 
-    # else:
-      # bits = space.call_method(w_other, 'to_bits')
-      # if isinstance(w_other, W_SmallBits):
-        # if nbits > w_other.nbits:
-          # raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS to_bits() during @= blocking assignment, "
-                                          # "but here LHS Bits%d > RHS Bits%d.\n"
-                                          # "- Suggestion: LHS @= zext/sext(RHS, nbits/Type)", nbits, w_other.nbits)
-        # else:
-          # raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= blocking assignment, "
-                                          # "but here LHS Bits%d < RHS Bits%d.\n"
-                                          # "- Suggestion: LHS @= zext/sext(RHS, nbits/Type)", nbits, w_other.nbits)
-        # self.intval = w_other.intval
-
-      # elif isinstance(w_other, BigBits):
-        # raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS to_bits() during @= blocking assignment, "
-                                        # "but here LHS Bits%d < RHS Bits%d.\n"
-                                        # "- Suggestion: LHS @= trunc(RHS, nbits/Type)", nbits, w_other.nbits )
-
-      # else:
-        # raise oefmt(space.w_ValueError, "RHS to_bits() must return Bits object!")
-
+    elif isinstance(w_other, W_BigBits):
+      raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= blocking assignment, "
+                                      "but here LHS Bits%d < RHS Bits%d.\n"
+                                      "- Suggestion: LHS @= trunc(RHS, nbits/Type)", nbits, w_other.nbits )
     else:
-      raise oefmt(space.w_TypeError, "Invalid RHS value for @= : Must be int or Bits or Bitstruct with nbits/to_bits methods")
+      w_other_bits = space.call_method(w_other, 'to_bits')
+      if isinstance(w_other_bits, W_SmallBits):
+        if nbits != w_other_bits.nbits:
+          if nbits > w_other_bits.nbits:
+            raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS to_bits() during @= blocking assignment, "
+                                            "but here LHS Bits%d > RHS Bits%d.\n"
+                                            "- Suggestion: LHS @= zext/sext(RHS, nbits/Type)", nbits, w_other_bits.nbits)
+          else:
+            raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= blocking assignment, "
+                                            "but here LHS Bits%d < RHS Bits%d.\n"
+                                            "- Suggestion: LHS @= zext/sext(RHS, nbits/Type)", nbits, w_other_bits.nbits)
+        self.intval = w_other_bits.intval
+
+      elif isinstance(w_other_bits, W_BigBits):
+        raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS to_bits() during @= blocking assignment, "
+                                        "but here LHS Bits%d < RHS Bits%d.\n"
+                                        "- Suggestion: LHS @= trunc(RHS, nbits/Type)", nbits, w_other_bits.nbits )
+      else:
+        raise oefmt(space.w_ValueError, "RHS to_bits() must return Bits object!")
 
     return self
 
@@ -919,7 +918,7 @@ class W_SmallBits(W_AbstractBits):
                                           "but here LHS Bits%d > RHS Bits%d.\n"
                                           "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", nbits, w_other.nbits)
         else:
-          raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during @= non-blocking assignment, "
+          raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
                                           "but here LHS Bits%d < RHS Bits%d.\n"
                                           "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", nbits, w_other.nbits)
       return W_SmallBitsWithNext( nbits, self.intval, w_other.intval )
@@ -937,11 +936,6 @@ class W_SmallBits(W_AbstractBits):
 
       return W_SmallBitsWithNext( nbits, self.intval, intval & up )
 
-    elif isinstance(w_other, W_BigBits):
-      raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
-                                      "but here LHS Bits%d < RHS Bits%d.\n"
-                                      "- Suggestion: LHS <<= trunc(RHS, nbits/Type)", self.nbits, w_other.nbits )
-
     elif isinstance(w_other, W_LongObject):
       bigval = w_other.num
 
@@ -953,8 +947,31 @@ class W_SmallBits(W_AbstractBits):
 
       return W_SmallBitsWithNext( nbits, self.intval, bigval.int_and_( get_int_mask( self.nbits ) ).digit(0) )
 
+    elif isinstance(w_other, W_BigBits):
+      raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
+                                      "but here LHS Bits%d < RHS Bits%d.\n"
+                                      "- Suggestion: LHS <<= trunc(RHS, nbits/Type)", self.nbits, w_other.nbits )
+
     else:
-      raise oefmt(space.w_TypeError, "Invalid RHS value for <<= : Must be int or Bits")
+      w_other_bits = space.call_method(w_other, 'to_bits')
+      if isinstance(w_other_bits, W_SmallBits):
+        if nbits != w_other_bits.nbits:
+          if nbits > w_other_bits.nbits:
+            raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS to_bits() during <<= non-blocking assignment, "
+                                            "but here LHS Bits%d > RHS Bits%d.\n"
+                                            "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", nbits, w_other_bits.nbits)
+          else:
+            raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
+                                            "but here LHS Bits%d < RHS Bits%d.\n"
+                                            "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", nbits, w_other_bits.nbits)
+        return W_SmallBitsWithNext( nbits, self.intval, w_other_bits.intval )
+
+      elif isinstance(w_other_bits, W_BigBits):
+        raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS to_bits() during <<= non-blocking assignment, "
+                                        "but here LHS Bits%d < RHS Bits%d.\n"
+                                        "- Suggestion: LHS <<= trunc(RHS, nbits/Type)", nbits, w_other_bits.nbits )
+      else:
+        raise oefmt(space.w_ValueError, "RHS to_bits() must return Bits object!")
 
   def _descr_flip(self, space):
     raise oefmt(space.w_TypeError, "_flip cannot be called on '%T' objects which has no _next", self)
@@ -1026,11 +1043,6 @@ class W_SmallBitsWithNext(W_SmallBits):
                                         hex(intval), nbits, nbits, hex(lo), hex(up))
       self.next_intval = intval & up
 
-    elif isinstance(w_other, W_BigBits):
-      raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
-                                      "but here LHS Bits%d < RHS Bits%d.\n"
-                                      "- Suggestion: LHS <<= trunc(RHS, nbits/Type)", nbits, w_other.nbits )
-
     elif isinstance(w_other, W_LongObject):
       bigval = w_other.num
       if _rbigint_check_exceed_nbits( bigval, nbits ):
@@ -1040,8 +1052,31 @@ class W_SmallBitsWithNext(W_SmallBits):
                                         hex(get_int_lower(nbits)), hex(get_int_mask(nbits)))
       self.next_intval = bigval.int_and_( get_int_mask( nbits ) ).digit(0)
 
+    elif isinstance(w_other, W_BigBits):
+      raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
+                                      "but here LHS Bits%d < RHS Bits%d.\n"
+                                      "- Suggestion: LHS <<= trunc(RHS, nbits/Type)", nbits, w_other.nbits )
+
     else:
-      raise oefmt(space.w_TypeError, "Invalid RHS value for <<= : Must be int or Bits")
+      w_other_bits = space.call_method(w_other, 'to_bits')
+      if isinstance(w_other_bits, W_SmallBits):
+        if nbits != w_other_bits.nbits:
+          if nbits > w_other_bits.nbits:
+            raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS to_bits() during <<= non-blocking assignment, "
+                                            "but here LHS Bits%d > RHS Bits%d.\n"
+                                            "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", nbits, w_other_bits.nbits)
+          else:
+            raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
+                                            "but here LHS Bits%d < RHS Bits%d.\n"
+                                            "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", nbits, w_other_bits.nbits)
+        self.next_intval = w_other_bits.intval
+
+      elif isinstance(w_other_bits, W_BigBits):
+        raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS to_bits() during <<= non-blocking assignment, "
+                                        "but here LHS Bits%d < RHS Bits%d.\n"
+                                        "- Suggestion: LHS <<= trunc(RHS, nbits/Type)", nbits, w_other_bits.nbits )
+      else:
+        raise oefmt(space.w_ValueError, "RHS to_bits() must return Bits object!")
 
     return self
 
@@ -1139,4 +1174,5 @@ W_AbstractBits.typedef = TypeDef("Bits",
     _flip = interp2app(W_AbstractBits.descr_flip),
 
     clone = interp2app(W_AbstractBits.descr_clone),
+    to_bits = interp2app(W_AbstractBits.descr_to_bits),
 )

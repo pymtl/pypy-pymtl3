@@ -586,6 +586,98 @@ class AppTestBits:
         b256._flip()
         assert b256 == mamba.Bits(256,43)
 
+    def test_ilshift_other_class(self):
+        import mamba, sys
+
+        class B_4_8(object):
+          def __init__( self, a, b ):
+            self.a = mamba.Bits(4,a)
+            self.b = mamba.Bits(8,b)
+          def to_bits( self ):
+            ret = mamba.Bits(12, 0)
+            ret[0:4]  = self.a
+            ret[4:12] = self.b
+            return ret
+
+        class B_88_44(object):
+          def __init__( self, a, b ):
+            self.a = mamba.Bits(88,a)
+            self.b = mamba.Bits(44,b)
+          def to_bits( self ):
+            ret = mamba.Bits(132, 0)
+            ret[0:88]  = self.a
+            ret[88:132] = self.b
+            return ret
+
+        b = B_4_8(4,2)
+        a = mamba.Bits(12, 0)
+        a <<= b
+        assert a == 0
+        a._flip()
+        assert a == 36
+
+        c = B_88_44(4,2)
+        with raises(ValueError):
+          a <<= c
+
+        a = mamba.Bits(13, 0)
+        with raises( ValueError ):
+          a <<= b
+
+        a = mamba.Bits(11, 0)
+        with raises( ValueError ):
+          a <<= b
+
+        d = mamba.Bits(132, 0)
+        d <<= c
+        assert d == 0
+        d._flip()
+        assert d == 0x20000000000000000000004
+
+    def test_imatmul_other_class(self):
+        import mamba, sys
+
+        class B_4_8(object):
+          def __init__( self, a, b ):
+            self.a = mamba.Bits(4,a)
+            self.b = mamba.Bits(8,b)
+          def to_bits( self ):
+            ret = mamba.Bits(12, 0)
+            ret[0:4]  = self.a
+            ret[4:12] = self.b
+            return ret
+
+        class B_88_44(object):
+          def __init__( self, a, b ):
+            self.a = mamba.Bits(88,a)
+            self.b = mamba.Bits(44,b)
+          def to_bits( self ):
+            ret = mamba.Bits(132, 0)
+            ret[0:88]  = self.a
+            ret[88:132] = self.b
+            return ret
+
+        b = B_4_8(4,2)
+        a = mamba.Bits(12, 0)
+        a.__imatmul__( b )
+        assert a == 36
+
+        c = B_88_44(4,2)
+        with raises(ValueError):
+          a.__imatmul__( c )
+
+        a = mamba.Bits(13, 0)
+        with raises( ValueError ):
+          a.__imatmul__( b )
+
+        a = mamba.Bits(11, 0)
+        with raises( ValueError ):
+          a.__imatmul__( b )
+
+        d = mamba.Bits(132, 0)
+        d.__imatmul__( c )
+        assert d == 0x20000000000000000000004
+
     def test_concat(self):
         from mamba import Bits, concat
         assert concat(Bits(2, 1), Bits(2, 0b10)) == Bits(4, 0b0110)
