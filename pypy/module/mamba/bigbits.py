@@ -669,7 +669,7 @@ class W_BigBitsWithNext(W_BigBits):
             raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS during <<= non-blocking assignment, "
                                             "but here LHS Bits%d < RHS Bits%d.\n"
                                             "- Suggestion: LHS <<= zext/sext(RHS, nbits/Type)", nbits, w_other_bits.nbits)
-        sefl.next_bigval = w_other_bits.bigval
+        self.next_bigval = w_other_bits.bigval
 
       elif isinstance(w_other_bits, W_SmallBits):
         raise oefmt(space.w_ValueError, "Bitwidth of LHS must be equal to RHS to_bits() during <<= non-blocking assignment, "
