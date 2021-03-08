@@ -165,6 +165,14 @@ class AppTestBufferedReader:
         assert raw.nbreads == 3
         f.close()
 
+        # a negative argument (or no argument) leads to using the default
+        # buffer size
+        raw = _io.BytesIO(b'aaaa\nbbbb\ncccc\n')
+        f = _io.BufferedReader(raw, buffer_size=3)
+        assert f.read1(-1) == b'aaa'
+        assert f.read1() == b'a\nb'
+
+
     def test_readinto(self):
         import _io
         for methodname in ["readinto", "readinto1"]:
@@ -800,6 +808,15 @@ class AppTestBufferedWriter:
         assert err.value.args == ('close',)
         assert err.value.__context__.args == ('flush',)
         assert not b.closed
+
+    def test_truncate_after_close(self):
+        import _io
+        raw = _io.FileIO(self.tmpfile, 'w+')
+        b = _io.BufferedWriter(raw)
+        b.close()
+        with raises(ValueError) as exc:
+            b.truncate()
+        assert exc.value.args[0] == "truncate of closed file"
 
 class AppTestBufferedRWPair:
     def test_pair(self):

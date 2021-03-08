@@ -18,9 +18,9 @@ syntax: regexp
 ^testresult$
 ^site-packages$
 ^site-packages/.*$
-^site-packages/.*$
-^bin$
+^bin/
 ^pypy/bin/pypy-c
+^pypy/lib/
 ^pypy/module/cpyext/src/.+\.o$
 ^pypy/module/cpyext/src/.+\.obj$
 ^pypy/module/cpyext/test/.+\.errors$
@@ -100,4 +100,5 @@ syntax: regexp
 .hypothesis/
 ^release/
 ^rpython/_cache$
-
+^lib
+^extra_tests/hpy_tests/_vendored$

@@ -48,22 +48,22 @@ def unwrap_cell(space, w_value):
     return w_value
 
 def write_cell(space, w_cell, w_value):
-    from pypy.objspace.std.intobject import W_IntObject
+    from pypy.objspace.std.listobject import is_plain_int1, plain_int_w
     if w_cell is None:
         # attribute does not exist at all, write it without a cell first
         return w_value
     if isinstance(w_cell, ObjectMutableCell):
         w_cell.w_value = w_value
         return None
-    elif isinstance(w_cell, IntMutableCell) and type(w_value) is W_IntObject:
-        w_cell.intvalue = w_value.intval
+    elif isinstance(w_cell, IntMutableCell) and is_plain_int1(w_value):
+        w_cell.intvalue = plain_int_w(space, w_value)
         return None
     elif space.is_w(w_cell, w_value):
         # If the new value and the current value are the same, don't
         # create a level of indirection, or mutate the version.
         return None
-    if type(w_value) is W_IntObject:
-        return IntMutableCell(w_value.intval)
+    if is_plain_int1(w_value):
+        return IntMutableCell(plain_int_w(space, w_value))
     else:
         return ObjectMutableCell(w_value)
 
@@ -203,12 +203,10 @@ class W_TypeObject(W_Root):
         self.flag_map_or_seq = '?'   # '?' means "don't know, check otherwise"
 
         self.layout = None  # the lines below may try to access self.layout
-        if overridetypedef is not None:
-            assert not force_new_layout
-            layout = setup_builtin_type(self, overridetypedef)
-        else:
-            layout = setup_user_defined_type(self, force_new_layout)
-        self.layout = layout
+
+        # get and remove the __qualname__ from the dict *first*, so that if
+        # e.g. a slot named "__qualname__" exists, the setup_user_defined_type
+        # below will not see it
         self.qualname = self.getname(space)
         if self.flag_heaptype:
             w_qualname = self.dict_w.pop('__qualname__', None)
@@ -219,6 +217,13 @@ class W_TypeObject(W_Root):
                     raise oefmt(space.w_TypeError,
                                 "type __qualname__ must be a str, not %T",
                                 w_qualname)
+
+        if overridetypedef is not None:
+            assert not force_new_layout
+            layout = setup_builtin_type(self, overridetypedef)
+        else:
+            layout = setup_user_defined_type(self, force_new_layout)
+        self.layout = layout
 
         if not is_mro_purely_of_types(self.mro_w):
             pass
@@ -807,10 +812,21 @@ def _check_new_args(space, w_name, w_bases, w_dict):
 
 
 def _create_new_type(space, w_typetype, w_name, w_bases, w_dict, __args__):
+    if hasattr(space, 'is_fake_objspace'):
+        # this is for the various test_ztranslation around: if we are using
+        # the fake objspace, we don't want to annotate all the code which is
+        # specific to StdObjSpace. We just return a "random" W_Root.
+        return space.newlong(42)
+
     # this is in its own function because we want the special case 'type(x)'
     # above to be seen by the jit.
     _check_new_args(space, w_name, w_bases, w_dict)
     bases_w = space.fixedview(w_bases)
+    for w_base in bases_w:
+        if space.lookup(w_base, '__mro_entries__') is not None:
+            raise oefmt(space.w_TypeError,
+                        "type() doesn't support MRO entry resolution; "
+                        "use types.new_class()")
 
     w_winner = _calculate_metaclass(space, w_typetype, bases_w)
     if not space.is_w(w_winner, w_typetype):
@@ -848,6 +864,23 @@ def _create_new_type(space, w_typetype, w_name, w_bases, w_dict, __args__):
     _init_subclass(space, w_type, __args__)
     return w_type
 
+def _calculate_metaclass(space, w_metaclass, bases_w):
+    """Determine the most derived metatype"""
+    w_winner = w_metaclass
+    for base in bases_w:
+        w_typ = space.type(base)
+        if space.is_w(w_typ, space.w_classobj):
+            continue # special-case old-style classes
+        if space.issubtype_w(w_winner, w_typ):
+            continue
+        if space.issubtype_w(w_typ, w_winner):
+            w_winner = w_typ
+            continue
+        msg = ("metaclass conflict: the metaclass of a derived class must be "
+               "a (non-strict) subclass of the metaclasses of all its bases")
+        raise oefmt(space.w_TypeError, msg)
+    return w_winner
+
 def _store_type_in_classcell(space, w_type, w_classcell, dict_w):
     from pypy.interpreter.nestedscope import Cell
     if isinstance(w_classcell, Cell):
@@ -879,7 +912,8 @@ def _precheck_for_new(space, w_type):
     return w_type
 
 def _set_names(space, w_type):
-    for key, w_value in w_type.dict_w.iteritems():
+
+    for key, w_value in w_type.dict_w.items():
         w_meth = space.lookup(w_value, '__set_name__')
         if w_meth is not None:
             try:
@@ -1383,7 +1417,7 @@ def ensure_common_attributes(w_self):
     w_self.mro_w = []      # temporarily
     w_self.hasmro = False
     compute_mro(w_self)
-    ensure_classmethod_init_subclass(w_self)
+    ensure_classmethods(w_self, ['__init_subclass__', '__class_getitem__'])
 
 def ensure_static_new(w_self):
     # special-case __new__, as in CPython:
@@ -1393,11 +1427,12 @@ def ensure_static_new(w_self):
         if isinstance(w_new, Function):
             w_self.dict_w['__new__'] = StaticMethod(w_new)
 
-def ensure_classmethod_init_subclass(w_self):
-    if '__init_subclass__' in w_self.dict_w:
-        w_init_subclass = w_self.dict_w['__init_subclass__']
-        if isinstance(w_init_subclass, Function):
-            w_self.dict_w['__init_subclass__'] = ClassMethod(w_init_subclass)
+def ensure_classmethods(w_self, method_names):
+    for method_name in method_names:
+        if method_name in w_self.dict_w:
+            w_method = w_self.dict_w[method_name]
+            if isinstance(w_method, Function):
+                w_self.dict_w[method_name] = ClassMethod(w_method)
 
 def ensure_module_attr(w_self):
     # initialize __module__ in the dict (user-defined types only)
@@ -1589,7 +1624,7 @@ class TypeCache(SpaceCache):
                 if isinstance(w_obj, FunctionWithFixedCode):
                     qualname = (w_type.getqualname(space).encode('utf-8')
                                 + '.' + name)
-                    w_obj.fset_func_qualname(space, space.newtext(qualname))
+                    w_obj.set_qualname(qualname)
 
         if hasattr(typedef, 'flag_sequence_bug_compat'):
             w_type.flag_sequence_bug_compat = typedef.flag_sequence_bug_compat

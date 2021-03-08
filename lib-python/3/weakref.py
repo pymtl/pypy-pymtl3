@@ -21,9 +21,10 @@ from _weakref import (
 
 from _weakrefset import WeakSet, _IterationGuard
 
-import collections  # Import after _weakref to avoid circular import.
+import _collections_abc  # Import after _weakref to avoid circular import.
 import sys
 import itertools
+import __pypy__
 
 ProxyTypes = (ProxyType, CallableProxyType)
 
@@ -37,9 +38,9 @@ try:
 except ImportError:
     def _delitem_if_value_is(d, key, value):
         try:
-            if self.data[key] is value:  # fall-back: there is a potential
+            if d[key] is value:  # fall-back: there is a potential
                 #             race condition in multithreaded programs HERE
-                del self.data[key]
+                del d[key]
         except KeyError:
             pass
 
@@ -107,7 +108,7 @@ class WeakMethod(ref):
     __hash__ = ref.__hash__
 
 
-class WeakValueDictionary(collections.MutableMapping):
+class WeakValueDictionary(_collections_abc.MutableMapping):
     """Mapping class that references values weakly.
 
     Entries in the dictionary will be discarded when no strong
@@ -139,7 +140,7 @@ class WeakValueDictionary(collections.MutableMapping):
         # A list of keys to be removed
         self._pending_removals = []
         self._iterating = set()
-        self.data = d = {}
+        self.data = {}
         self.update(*args, **kw)
 
     def _commit_removals(self):
@@ -172,7 +173,7 @@ class WeakValueDictionary(collections.MutableMapping):
         # the weakref callbacks may be called at an unknown later time.
         # original code was: return len(self.data)
         result = 0
-        for wr in self.data.values():
+        for wr in list(self.data.values()):
             result += (wr() is not None)
         return result
 
@@ -197,10 +198,11 @@ class WeakValueDictionary(collections.MutableMapping):
         if self._pending_removals:
             self._commit_removals()
         new = WeakValueDictionary()
-        for key, wr in self.data.items():
-            o = wr()
-            if o is not None:
-                new[key] = o
+        with _IterationGuard(self):
+            for key, wr in self.data.items():
+                o = wr()
+                if o is not None:
+                    new[key] = o
         return new
 
     __copy__ = copy
@@ -210,10 +212,11 @@ class WeakValueDictionary(collections.MutableMapping):
         if self._pending_removals:
             self._commit_removals()
         new = self.__class__()
-        for key, wr in self.data.items():
-            o = wr()
-            if o is not None:
-                new[deepcopy(key, memo)] = o
+        with _IterationGuard(self):
+            for key, wr in self.data.items():
+                o = wr()
+                if o is not None:
+                    new[deepcopy(key, memo)] = o
         return new
 
     def get(self, key, default=None):
@@ -366,7 +369,7 @@ class KeyedRef(ref):
         super().__init__(ob, callback)
 
 
-class WeakKeyDictionary(collections.MutableMapping):
+class WeakKeyDictionary(_collections_abc.MutableMapping):
     """ Mapping class that references keys weakly.
 
     Entries in the dictionary will be discarded when there is no
@@ -429,7 +432,7 @@ class WeakKeyDictionary(collections.MutableMapping):
 #        return len(self.data) - len(self._pending_removals)
 #
         result = 0
-        for wr in self.data:
+        for wr in list(self.data):
             result += (wr() is not None)
         return result
 
@@ -441,10 +444,11 @@ class WeakKeyDictionary(collections.MutableMapping):
 
     def copy(self):
         new = WeakKeyDictionary()
-        for key, value in self.data.items():
-            o = key()
-            if o is not None:
-                new[o] = value
+        with _IterationGuard(self):
+            for key, value in self.data.items():
+                o = key()
+                if o is not None:
+                    new[o] = value
         return new
 
     __copy__ = copy
@@ -452,10 +456,11 @@ class WeakKeyDictionary(collections.MutableMapping):
     def __deepcopy__(self, memo):
         from copy import deepcopy
         new = self.__class__()
-        for key, value in self.data.items():
-            o = key()
-            if o is not None:
-                new[o] = deepcopy(value, memo)
+        with _IterationGuard(self):
+            for key, value in self.data.items():
+                o = key()
+                if o is not None:
+                    new[o] = deepcopy(value, memo)
         return new
 
     def get(self, key, default=None):
@@ -556,7 +561,27 @@ class finalize:
     class _Info:
         __slots__ = ("weakref", "func", "args", "kwargs", "atexit", "index")
 
-    def __init__(self, obj, func, *args, **kwargs):
+    def __init__(*args, **kwargs):
+        if len(args) >= 3:
+            self, obj, func, *args = args
+        elif not args:
+            raise TypeError("descriptor '__init__' of 'finalize' object "
+                            "needs an argument")
+        else:
+            if 'func' not in kwargs:
+                raise TypeError('finalize expected at least 2 positional '
+                                'arguments, got %d' % (len(args)-1))
+            func = kwargs.pop('func')
+            if len(args) >= 2:
+                self, obj, *args = args
+            else:
+                if 'obj' not in kwargs:
+                    raise TypeError('finalize expected at least 2 positional '
+                                    'arguments, got %d' % (len(args)-1))
+                obj = kwargs.pop('obj')
+                self, *args = args
+        args = tuple(args)
+
         if not self._registered_with_atexit:
             # We may register the exit function more than once because
             # of a thread race, but that is harmless

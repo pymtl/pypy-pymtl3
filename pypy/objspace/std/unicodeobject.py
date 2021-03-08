@@ -8,7 +8,7 @@ from rpython.rlib.objectmodel import (
 from rpython.rlib.rarithmetic import ovfcheck, r_uint
 from rpython.rlib.rstring import (
     StringBuilder, split, rsplit, replace_count, startswith, endswith)
-from rpython.rlib import rutf8, jit
+from rpython.rlib import rutf8, runicode, jit
 
 from pypy.interpreter import unicodehelper
 from pypy.interpreter.baseobjspace import W_Root
@@ -44,6 +44,12 @@ def codepoint_at_pos_dont_look_inside(utf8, p):
 joindriver = jit.JitDriver(greens = ['selfisnotempty', 'tpfirst', 'tplist'], reds = 'auto',
                            name='joindriver')
 
+class BadUtf8(Exception):
+    pass
+CHECK_ALL_STRINGS = False
+# CHECK_ALL_STRINGS: after translation.  Set to False to avoid overhead!
+
+
 class W_UnicodeObject(W_Root):
     import_from_mixin(StringMethods)
     _immutable_fields_ = ['_utf8', '_length']
@@ -56,11 +62,24 @@ class W_UnicodeObject(W_Root):
         self._utf8 = utf8str
         self._length = length
         self._index_storage = rutf8.null_storage()
-        if not we_are_translated() and not sys.platform == 'win32':
+        if CHECK_ALL_STRINGS or not we_are_translated():
             # utf8str must always be a valid utf8 string, except maybe with
             # explicit surrogate characters---which .decode('utf-8') doesn't
             # special-case in Python 2, which is exactly what we want here
-            assert length == len(utf8str.decode('utf-8'))
+            try:
+                if runicode.MAXUNICODE == 0xffff:
+                    # can't use .decode('utf-8') because it will add surrogates
+                    real_length = rutf8.check_utf8(utf8str, True)
+                else:
+                    real_length = len(utf8str.decode('utf-8'))
+            except (rutf8.CheckError, UnicodeDecodeError):
+                real_length = -999
+            if length != real_length:
+                from rpython.rlib.debug import debug_print
+                debug_print("!!! BAD UTF8 !!!")
+                debug_print(str([ord(c) for c in utf8str]))
+                debug_print("length", length, "real_length", real_length)
+                raise BadUtf8
 
     @staticmethod
     def from_utf8builder(builder):
@@ -1194,6 +1213,9 @@ class W_UnicodeObject(W_Root):
     def is_ascii(self):
         return self._length == len(self._utf8)
 
+    def descr_isascii(self, space):
+        return space.newbool(self.is_ascii())
+
     def _index_to_byte(self, index):
         if self.is_ascii():
             assert index >= 0
@@ -1700,6 +1722,13 @@ class UnicodeDocstrings:
         and there is at least one character in S, False otherwise.
         """
 
+    def isascii():
+        """Return True if all characters in the string are ASCII, False otherwise.
+
+        ASCII characters have code points in the range U+0000-U+007F.
+        Empty string is ASCII too.
+        """
+
     def casefold():
         """S.casefold() -> str
 
@@ -2018,6 +2047,8 @@ W_UnicodeObject.typedef = TypeDef(
                          doc=UnicodeDocstrings.isalnum.__doc__),
     isalpha = interp2app(W_UnicodeObject.descr_isalpha,
                          doc=UnicodeDocstrings.isalpha.__doc__),
+    isascii = interp2app(W_UnicodeObject.descr_isascii,
+                         doc=UnicodeDocstrings.isascii.__doc__),
     isdecimal = interp2app(W_UnicodeObject.descr_isdecimal,
                            doc=UnicodeDocstrings.isdecimal.__doc__),
     isdigit = interp2app(W_UnicodeObject.descr_isdigit,

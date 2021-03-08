@@ -75,6 +75,7 @@ class TestIterator(BaseApiTest):
 
 class AppTestCNumber(AppTestCpythonExtensionBase):
     def test_PyNumber_Check(self):
+        import sys
         mod = self.import_extension('foo', [
             ("test_PyNumber_Check", "METH_VARARGS",
              '''
@@ -84,3 +85,54 @@ class AppTestCNumber(AppTestCpythonExtensionBase):
             ''')])
         val = mod.test_PyNumber_Check(10)
         assert val == 1
+        #
+        class MyIndex:
+            def __index__(self):
+                return 42
+        val = mod.test_PyNumber_Check(MyIndex())
+        if sys.version_info >= (3, 8):
+            assert val == 1
+        else:
+            assert val == 0
+
+    def test_number_tobase(self):
+        import sys
+        mod = self.import_extension('foo', [
+            ("pynumber_tobase", "METH_VARARGS",
+            """
+                PyObject *obj;
+                int base;
+                if (!PyArg_ParseTuple(args, "Oi:pynumber_tobase",
+                                      &obj, &base)) {
+                    return NULL;
+                }
+                return PyNumber_ToBase(obj, base);
+            """)])
+        assert mod.pynumber_tobase(123, 2) == '0b1111011'
+        assert mod.pynumber_tobase(123, 8) == '0o173'
+        assert mod.pynumber_tobase(123, 10) == '123'
+        assert mod.pynumber_tobase(123, 16) == '0x7b'
+        assert mod.pynumber_tobase(-123, 2) == '-0b1111011'
+        assert mod.pynumber_tobase(-123, 8) == '-0o173'
+        assert mod.pynumber_tobase(-123, 10) == '-123'
+        assert mod.pynumber_tobase(-123, 16) == '-0x7b'
+        try:
+            mod.pynumber_tobase(123.0, 10)
+        except TypeError:
+            pass
+        else:
+            assert False, 'expected TypeError'
+        try:
+            mod.pynumber_tobase('123', 10)
+        except TypeError:
+            pass
+        else:
+            assert False, 'expected TypeError'
+        if 'PyPy' in sys.version or sys.version_info >= (3,7):
+            # bpo 38643
+            try:
+                mod.pynumber_tobase(123, 0)
+            except ValueError:
+                pass
+            else:
+                assert False, 'expected TypeError'

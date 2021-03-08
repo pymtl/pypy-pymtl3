@@ -385,3 +385,21 @@ def setdefaulttimeout(space, w_timeout):
         if timeout < 0.0:
             raise oefmt(space.w_ValueError, "Timeout value out of range")
     rsocket.setdefaulttimeout(timeout)
+
+if hasattr(rsocket, 'sethostname'):
+    def sethostname(space, w_hostname):
+        """sethostname(hostname)
+
+        Set the host name.
+        """
+        if space.isinstance_w(w_hostname, space.w_bytes):
+            hostname = space.bytes_w(w_hostname)
+        elif space.isinstance_w(w_hostname, space.w_unicode):
+            hostname = space.fsencode_w(w_hostname)
+        else:
+            raise oefmt(space.w_TypeError,
+                        "sethostname() argument 1 must be str or bytes")
+        try:
+            res = rsocket.sethostname(hostname)
+        except SocketError as e:
+            raise converted_error(space, e)

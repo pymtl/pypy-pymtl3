@@ -118,6 +118,17 @@ def test_incomplete():
     Object = cts.gettype('Object')
     assert isinstance(Object, lltype.Struct)
 
+def test_incomplete_struct():
+    cdef = """
+    typedef struct s *ptr;
+    struct s {void* x;};
+    typedef struct s __s;  // HACK!
+    """
+    cts = parse_source(cdef)
+    PTR = cts.gettype("ptr")
+    assert isinstance(PTR.TO, lltype.Struct)
+    hash(PTR)
+
 def test_recursive():
     cdef = """
     typedef ssize_t Py_ssize_t;
@@ -165,6 +176,36 @@ def test_const():
     cts = parse_source(cdef)
     assert cts.definitions['bar'].c_foo == rffi.CONST_CCHARP != rffi.CCHARP
 
+def test_enum():
+    cdef = """
+    typedef enum {
+        mp_ass_subscript = 3,
+        mp_length = 4,
+        mp_subscript = 5,
+    } Slot;
+    """
+    cts = parse_source(cdef)
+    assert cts.gettype('Slot').mp_length == 4
+
+def test_translate_enum():
+    cdef = """
+    typedef enum {
+        mp_ass_subscript = 3,
+        mp_length = 4,
+        mp_subscript = 5,
+    } Slot;
+    """
+    cts = parse_source(cdef)
+    def f():
+        return cts.gettype('Slot').mp_length
+    graph = build_flow(f)
+    simplify_graph(graph)
+    # Check that the result is constant-folded
+    assert graph.startblock.operations == []
+    [link] = graph.startblock.exits
+    assert link.target is graph.returnblock
+    assert link.args[0] == const(4)
+
 def test_gettype():
     decl = """
     typedef ssize_t Py_ssize_t;
@@ -204,6 +245,16 @@ def test_parse_funcdecl():
     assert func_decl.get_llresult(cts) == cts.gettype('func_t*')
     assert func_decl.get_llargs(cts) == [cts.gettype('TestFloatObject *')]
 
+def test_struct_in_func_args():
+    decl = """
+    typedef struct {int x;} obj;
+    typedef int (*func)(obj x);
+    """
+    cts = parse_source(decl)
+    OBJ = cts.gettype('obj')
+    FUNCPTR = cts.gettype('func')
+    assert FUNCPTR.TO.ARGS == (OBJ,)
+
 def test_write_func():
     from ..api import ApiFunction
     from rpython.translator.c.database import LowLevelDatabase
@@ -230,7 +281,6 @@ def test_wchar_t():
     obj.c_x = cts.cast('wchar_t*', 0)
     obj.c_x =  lltype.nullptr(rffi.CWCHARP.TO)
     lltype.free(obj, flavor='raw')
-
 
 def test_translate_cast():
     cdef = "typedef ssize_t Py_ssize_t;"

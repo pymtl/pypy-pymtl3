@@ -2,6 +2,7 @@ from rpython.rlib.unroll import unrolling_iterable
 from rpython.rlib import jit, rawrefcount
 from rpython.rlib.objectmodel import specialize, we_are_translated
 from rpython.rtyper.lltypesystem import rffi, lltype
+from rpython.rlib.rarithmetic import widen
 
 from pypy.interpreter.baseobjspace import DescrMismatch
 from pypy.interpreter.error import oefmt
@@ -266,7 +267,7 @@ def convert_member_defs(space, dict_w, members, w_type):
 WARN_MISSING_SLOTS = False
 missing_slots={}
 def warn_missing_slot(space, method_name, slot_name, w_type):
-    if not we_are_translated():
+    if WARN_MISSING_SLOTS and not we_are_translated():
         if slot_name not in missing_slots:
             missing_slots[slot_name] = w_type.getname(space)
             print "missing slot %r/%r, discovered on %r" % (
@@ -290,8 +291,7 @@ def update_all_slots(space, w_type, pto):
 
         if not slot_func_helper:
             if not slot_apifunc:
-                if WARN_MISSING_SLOTS:
-                    warn_missing_slot(space, method_name, slot_name, w_type)
+                warn_missing_slot(space, method_name, slot_name, w_type)
                 continue
             slot_func_helper = slot_apifunc.get_llhelper(space)
         fill_slot(space, pto, w_type, slot_names, slot_func_helper)
@@ -347,7 +347,7 @@ def fill_slot(space, pto, w_type, slot_names, slot_func_helper):
 
         setattr(struct, slot_names[1], slot_func_helper)
 
-def add_operators(space, dict_w, pto, name):
+def add_operators(space, w_type, dict_w, pto, name):
     from pypy.module.cpyext.object import PyObject_HashNotImplemented
     hash_not_impl = llslot(space, PyObject_HashNotImplemented)
     for method_name, slot_names, wrapper_class, doc in slotdefs_for_wrappers:
@@ -379,7 +379,9 @@ def add_operators(space, dict_w, pto, name):
             continue
 
         assert issubclass(wrapper_class, W_PyCWrapperObject)
-        w_obj = wrapper_class(space, pto, method_name, doc, func_voidp, offset=offset[:])
+        
+        w_obj = wrapper_class(space, w_type, method_name, doc, func_voidp,
+                              offset=offset[:])
         dict_w[method_name] = w_obj
     if pto.c_tp_doc:
         raw_doc = rffi.charp2str(cts.cast('char*', pto.c_tp_doc))
@@ -537,7 +539,7 @@ class W_PyCTypeObject(W_TypeObject):
         dict_w = {}
 
         name = rffi.charp2str(cts.cast('char*', pto.c_tp_name))
-        add_operators(space, dict_w, pto, name)
+        add_operators(space, self, dict_w, pto, name)
         convert_method_defs(space, dict_w, pto.c_tp_methods, self)
         convert_getset_defs(space, dict_w, pto.c_tp_getset, self)
         convert_member_defs(space, dict_w, pto.c_tp_members, self)
@@ -908,6 +910,11 @@ def fill_ht_slot(ht, slotnum, ptr):
         if num == slotnum:
             setattr(getattr(ht, membername), slotname, rffi.cast(TARGET, ptr))
 
+def get_ht_slot(ht, slotnum):
+    for num, membername, slotname, TARGET in SLOT_TABLE:
+        if num == slotnum:
+            return rffi.cast(rffi.VOIDP, getattr(getattr(ht, membername), slotname))
+    return rffi.cast(rffi.VOIDP, 0)
 
 @cts.decl("""PyObject *
     PyType_FromSpecWithBases(PyType_Spec *spec, PyObject *bases)""",
@@ -989,6 +996,17 @@ def PyType_FromSpecWithBases(space, spec, bases):
         typ.c_tp_dealloc = state.C._PyPy_subtype_dealloc
     py_type_ready(space, typ)
     return cts.cast('PyObject*', res)
+
+
+@cpython_api([PyTypeObjectPtr, rffi.INT], rffi.VOIDP)
+def PyType_GetSlot(space, typ, slot):
+    """ Use the Py_tp* macros in typeslots.h to return a slot function
+    """
+    slot = widen(slot)
+    if slot < 0 or not typ.c_tp_flags & Py_TPFLAGS_HEAPTYPE:
+        raise oefmt(space.w_SystemError, "Bad internal call!")
+    heapobj = rffi.cast(PyHeapTypeObject, typ)
+    return get_ht_slot(heapobj, slot)
 
 @cpython_api([PyTypeObjectPtr, PyObject], PyObject, error=CANNOT_FAIL,
              result_borrowed=True)

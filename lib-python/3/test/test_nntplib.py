@@ -7,6 +7,7 @@ import functools
 import contextlib
 import os.path
 import re
+import threading
 
 from test import support
 from nntplib import NNTP, GroupInfo
@@ -16,10 +17,7 @@ try:
     import ssl
 except ImportError:
     ssl = None
-try:
-    import threading
-except ImportError:
-    threading = None
+
 
 TIMEOUT = 30
 certfile = os.path.join(os.path.dirname(__file__), 'keycert3.pem')
@@ -291,6 +289,11 @@ class NetworkedNNTPTestsMixin:
 NetworkedNNTPTestsMixin.wrap_methods()
 
 
+EOF_ERRORS = (EOFError,)
+if ssl is not None:
+    EOF_ERRORS += (ssl.SSLEOFError,)
+
+
 class NetworkedNNTPTests(NetworkedNNTPTestsMixin, unittest.TestCase):
     # This server supports STARTTLS (gmane doesn't)
     NNTP_HOST = 'news.trigofacile.com'
@@ -312,7 +315,7 @@ class NetworkedNNTPTests(NetworkedNNTPTestsMixin, unittest.TestCase):
                     raise unittest.SkipTest(f"{cls} got {ssl_err} connecting "
                                             f"to {cls.NNTP_HOST!r}")
                 raise
-            except EOFError:
+            except EOF_ERRORS:
                 raise unittest.SkipTest(f"{cls} got EOF error on connecting "
                                         f"to {cls.NNTP_HOST!r}")
 
@@ -630,7 +633,7 @@ class NNTPv1Handler:
                     "\tSat, 19 Jun 2010 18:04:08 -0400"
                     "\t<4FD05F05-F98B-44DC-8111-C6009C925F0C@gmail.com>"
                     "\t<hvalf7$ort$1@dough.gmane.org>\t7103\t16"
-                    "\tXref: news.gmane.org gmane.comp.python.authors:57"
+                    "\tXref: news.gmane.io gmane.comp.python.authors:57"
                     "\n"
                 "58\tLooking for a few good bloggers"
                     "\tDoug Hellmann <doug.hellmann-Re5JQEeQqe8AvxtiuMwx3w@public.gmane.org>"
@@ -1116,7 +1119,7 @@ class NNTPv1v2TestsMixin:
             "references": "<hvalf7$ort$1@dough.gmane.org>",
             ":bytes": "7103",
             ":lines": "16",
-            "xref": "news.gmane.org gmane.comp.python.authors:57"
+            "xref": "news.gmane.io gmane.comp.python.authors:57"
             })
         art_num, over = overviews[1]
         self.assertEqual(over["xref"], None)
@@ -1538,7 +1541,7 @@ class MockSslTests(MockSocketTests):
     def nntp_class(*pos, **kw):
         return nntplib.NNTP_SSL(*pos, ssl_context=bypass_context, **kw)
 
-@unittest.skipUnless(threading, 'requires multithreading')
+
 class LocalServerTests(unittest.TestCase):
     def setUp(self):
         sock = socket.socket()

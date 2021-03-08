@@ -87,6 +87,10 @@ corresponding Unix manual entries for more information on calls."""
         'get_inheritable': 'interp_posix.get_inheritable',
         'set_inheritable': 'interp_posix.set_inheritable',
         'fspath': 'interp_posix.fspath',
+        'putenv': 'interp_posix.putenv',
+        'unsetenv': 'interp_posix.unsetenv',
+        'ftruncate': 'interp_posix.ftruncate',
+        'truncate': 'interp_posix.truncate',
     }
 
     if hasattr(os, 'chown'):
@@ -97,19 +101,12 @@ corresponding Unix manual entries for more information on calls."""
         interpleveldefs['fchown'] = 'interp_posix.fchown'
     if hasattr(os, 'fchmod'):
         interpleveldefs['fchmod'] = 'interp_posix.fchmod'
-    if hasattr(os, 'ftruncate'):
-        interpleveldefs['ftruncate'] = 'interp_posix.ftruncate'
-        interpleveldefs['truncate'] = 'interp_posix.truncate'
     if hasattr(os, 'fsync'):
         interpleveldefs['fsync'] = 'interp_posix.fsync'
     if hasattr(os, 'fdatasync'):
         interpleveldefs['fdatasync'] = 'interp_posix.fdatasync'
     if hasattr(os, 'fchdir'):
         interpleveldefs['fchdir'] = 'interp_posix.fchdir'
-    if hasattr(os, 'putenv'):
-        interpleveldefs['putenv'] = 'interp_posix.putenv'
-    if hasattr(posix, 'unsetenv'): # note: emulated in os
-        interpleveldefs['unsetenv'] = 'interp_posix.unsetenv'
     if hasattr(os, 'killpg'):
         interpleveldefs['killpg'] = 'interp_posix.killpg'
     if hasattr(os, 'getpid'):
@@ -118,6 +115,7 @@ corresponding Unix manual entries for more information on calls."""
         interpleveldefs['readlink'] = 'interp_posix.readlink'
     if hasattr(os, 'fork'):
         interpleveldefs['fork'] = 'interp_posix.fork'
+        interpleveldefs['register_at_fork'] = 'interp_posix.register_at_fork'
     if hasattr(os, 'openpty'):
         interpleveldefs['openpty'] = 'interp_posix.openpty'
     if hasattr(os, 'forkpty'):
@@ -165,6 +163,15 @@ corresponding Unix manual entries for more information on calls."""
         interpleveldefs['getlogin'] = 'interp_posix.getlogin'
     if hasattr(os, 'ctermid'):
         interpleveldefs['ctermid'] = 'interp_posix.ctermid'
+    if hasattr(rposix, 'sched_rr_get_interval'):
+        interpleveldefs['sched_rr_get_interval'] = 'interp_posix.sched_rr_get_interval'
+    if hasattr(rposix, 'sched_setscheduler'):
+        interpleveldefs['sched_setscheduler'] = 'interp_posix.sched_setscheduler'
+        interpleveldefs['sched_getscheduler'] = 'interp_posix.sched_getscheduler'
+    if hasattr(rposix, 'sched_getparam'):
+        interpleveldefs['sched_getparam'] = 'interp_posix.sched_getparam'
+        appleveldefs['sched_param'] = 'app_posix.sched_param'
+        interpleveldefs['sched_setparam'] = 'interp_posix.sched_setparam'
 
     for name in ['setsid', 'getuid', 'geteuid', 'getgid', 'getegid', 'setuid',
                  'seteuid', 'setgid', 'setegid', 'getgroups', 'getpgrp',
@@ -174,13 +181,13 @@ corresponding Unix manual entries for more information on calls."""
                  'getresuid', 'getresgid', 'setresuid', 'setresgid']:
         if hasattr(os, name):
             interpleveldefs[name] = 'interp_posix.%s' % (name,)
-    # not visible via os, inconsistency in nt:
-    if hasattr(posix, '_getfullpathname'):
-        interpleveldefs['_getfullpathname'] = 'interp_posix._getfullpathname'
     if os.name == 'nt':
         interpleveldefs.update({
+                '_getfullpathname': 'interp_posix._getfullpathname',
                 '_getfileinformation': 'interp_posix._getfileinformation',
                 '_getfinalpathname': 'interp_posix._getfinalpathname',
+                'get_handle_inheritable': 'interp_posix.get_handle_inheritable',
+                'set_handle_inheritable': 'interp_posix.set_handle_inheritable',
         })
     if hasattr(os, 'chroot'):
         interpleveldefs['chroot'] = 'interp_posix.chroot'
@@ -270,11 +277,13 @@ corresponding Unix manual entries for more information on calls."""
         # Import structseq before the full importlib is ready
         importing.importhook(space, '_structseq')
 
+dedup = ['SEEK_SET', 'SEEK_CUR', 'SEEK_END']
+if sys.platform != 'win32':
+    dedup += ['P_NOWAIT', 'P_NOWAITO', 'P_WAIT']
 for constant in dir(os):
     value = getattr(os, constant)
     if constant.isupper() and type(value) is int:
-        if constant in ['SEEK_SET', 'SEEK_CUR', 'SEEK_END',
-                        'P_NOWAIT', 'P_NOWAITO', 'P_WAIT']:
+        if constant in dedup:
             # obscure, but these names are not in CPython's posix module
             # and if we put it here then they end up twice in 'os.__all__'
             continue

@@ -73,9 +73,9 @@ def test_member():
 
 def test_invalid_unicode_identifier():
     skip("utf-8 encoding before translation accepts lone surrogates, "
-         "because it is Python 2.7, but after translation it does not. "
-         "Moreover, CPython 3.x accepts such unicode attributes anyway. "
-         "This makes this test half-wrong for now.")
+        "because it is Python 2.7, but after translation it does not. "
+        "Moreover, CPython 3.x accepts such unicode attributes anyway. "
+        "This makes this test half-wrong for now.")
     class X(object):
         pass
     x = X()
@@ -161,3 +161,14 @@ def test_descr_funny_new():
     assert C.__new__(1,2) == (C, 1, 2)
     assert C(1,2) == (C, C, 1, 2)
 
+def test_issue3255():
+    class MagicCaller(object):
+        def __get__(self, *args):
+            raise Exception("should not be called")
+        def __call__(self, *args):
+            return lambda attr: attr
+    class Descriptor(object):
+        __get__ = MagicCaller()
+    class X(object):
+        __getattribute__ = Descriptor()
+    assert X().foo == "foo"

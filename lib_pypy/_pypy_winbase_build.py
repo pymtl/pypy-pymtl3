@@ -1,3 +1,6 @@
+# This module provides interfaces needed by both msvcrt and
+# _subprocess.py.
+#
 # Note: uses the CFFI out-of-line ABI mode.  We can't use the API
 # mode because ffi.compile() needs to run the compiler, which
 # needs 'subprocess', which needs 'msvcrt' and '_subprocess',
@@ -6,11 +9,7 @@
 # Note that if you need to regenerate _pypy_winbase_cffi and
 # can't use a preexisting PyPy to do that, then running this
 # file should work as long as 'subprocess' is not imported
-# by cffi.  I had to hack in 'cffi._pycparser' to move an
-#'import subprocess' to the inside of a function.  (Also,
-# CPython+CFFI should work as well.)
-#
-# This module supports both msvcrt.py and _subprocess.py.
+# by cffi. (CPython+CFFI should work)
 
 from cffi import FFI
 
@@ -117,6 +116,7 @@ void WINAPI SetLastError(DWORD);
 BOOL WINAPI GetOverlappedResult(HANDLE, LPOVERLAPPED, LPDWORD, BOOL);
 HANDLE WINAPI GetCurrentProcess(void);
 HANDLE OpenProcess(DWORD, BOOL, DWORD);
+UINT WINAPI GetACP(VOID);
 void ExitProcess(UINT);
 BOOL WINAPI DuplicateHandle(HANDLE, HANDLE, HANDLE, LPHANDLE,
                             DWORD, BOOL, DWORD);
@@ -153,14 +153,61 @@ BOOL WINAPI UnregisterWait(HANDLE);
 BOOL WINAPI GetQueuedCompletionStatus(HANDLE, LPDWORD, ULONG**, LPOVERLAPPED*, DWORD);
 HANDLE WINAPI CreateIoCompletionPort(HANDLE, HANDLE, ULONG_PTR, DWORD);
 
-
-
 #define WT_EXECUTEINWAITTHREAD 0x00000004
 #define WT_EXECUTEONLYONCE 0x00000008
 
 HANDLE GetProcessHeap();
 LPVOID HeapAlloc(HANDLE, DWORD, SIZE_T);
 BOOL HeapFree(HANDLE, DWORD, LPVOID);
+
+typedef struct _COORD {
+  SHORT X;
+  SHORT Y;
+} COORD, *PCOORD;
+
+typedef struct _FOCUS_EVENT_RECORD {
+  BOOL bSetFocus;
+} FOCUS_EVENT_RECORD;
+
+typedef struct _WINDOW_BUFFER_SIZE_RECORD {
+  COORD dwSize;
+} WINDOW_BUFFER_SIZE_RECORD;
+
+typedef struct _KEY_EVENT_RECORD {
+  BOOL  bKeyDown;
+  WORD  wRepeatCount;
+  WORD  wVirtualKeyCode;
+  WORD  wVirtualScanCode;
+  union {
+    WCHAR UnicodeChar;
+    CHAR  AsciiChar;
+  } uChar;
+  DWORD dwControlKeyState;
+} KEY_EVENT_RECORD;
+
+typedef struct _MENU_EVENT_RECORD {
+  UINT dwCommandId;
+} MENU_EVENT_RECORD, *PMENU_EVENT_RECORD;
+
+typedef struct _MOUSE_EVENT_RECORD {
+  COORD dwMousePosition;
+  DWORD dwButtonState;
+  DWORD dwControlKeyState;
+  DWORD dwEventFlags;
+} MOUSE_EVENT_RECORD;
+
+typedef struct _INPUT_RECORD {
+  WORD  EventType;
+  union {
+    KEY_EVENT_RECORD          KeyEvent;
+    MOUSE_EVENT_RECORD        MouseEvent;
+    WINDOW_BUFFER_SIZE_RECORD WindowBufferSizeEvent;
+    MENU_EVENT_RECORD         MenuEvent;
+    FOCUS_EVENT_RECORD        FocusEvent;
+  } Event;
+} INPUT_RECORD;
+
+BOOL WINAPI WriteConsoleInputW(HANDLE, const INPUT_RECORD*, DWORD, LPDWORD);
 
 """)
 

@@ -85,6 +85,7 @@ def test_getprotobyname(space, w_socket):
     assert space.unwrap(w_n) == socket.IPPROTO_TCP
 
 @pytest.mark.skipif("not hasattr(socket, 'fromfd')")
+@pytest.mark.skipif("sys.platform=='win32'")
 def test_ntohs(space, w_socket):
     w_n = space.appexec([w_socket, space.wrap(125)],
                         "(_socket, x): return _socket.ntohs(x)")
@@ -148,11 +149,11 @@ def test_ntop_ipv6(space, w_socket):
     if not socket.has_ipv6:
         pytest.skip("No IPv6 on this platform")
     tests = [
-        ("\x00" * 16, "::"),
-        ("\x01" * 16, ":".join(["101"] * 8)),
-        ("\x00\x00\x10\x10" * 4, None),  # "::1010:" + ":".join(["0:1010"] * 3)),
-        ("\x00" * 12 + "\x01\x02\x03\x04", "::1.2.3.4"),
-        ("\x00" * 10 + "\xff\xff\x01\x02\x03\x04", "::ffff:1.2.3.4"),
+        (b"\x00" * 16, "::"),
+        (b"\x01" * 16, ":".join(["101"] * 8)),
+        (b"\x00\x00\x10\x10" * 4, None),  # "::1010:" + ":".join(["0:1010"] * 3)),
+        (b"\x00" * 12 + "\x01\x02\x03\x04", "::1.2.3.4"),
+        (b"\x00" * 10 + "\xff\xff\x01\x02\x03\x04", "::ffff:1.2.3.4"),
     ]
     for packed, ip in tests:
         w_ip = space.appexec([w_socket, space.newbytes(packed)],
@@ -164,6 +165,7 @@ def test_ntop_ipv6(space, w_socket):
         assert space.unwrap(w_packed) == packed
 
 def test_pton_ipv6(space, w_socket):
+    import sys
     if not hasattr(socket, 'inet_pton'):
         pytest.skip('No socket.inet_pton on this platform')
     if not socket.has_ipv6:
@@ -176,10 +178,13 @@ def test_pton_ipv6(space, w_socket):
         ("\x00\x01" * 6 + "\x00" * 4, "1:1:1:1:1:1::"),
         ("\xab\xcd\xef\00" + "\x00" * 12, "ABCD:EF00::"),
         ("\xab\xcd\xef\00" + "\x00" * 12, "abcd:ef00::"),
-        ("\x00\x00\x10\x10" * 4, "::1010:" + ":".join(["0:1010"] * 3)),
         ("\x00" * 12 + "\x01\x02\x03\x04", "::1.2.3.4"),
         ("\x00" * 10 + "\xff\xff\x01\x02\x03\x04", "::ffff:1.2.3.4"),
     ]
+    if sys.platform != 'win32':
+        tests.append(
+            ("\x00\x00\x10\x10" * 4, "::1010:" + ":".join(["0:1010"] * 3))
+        )
     for packed, ip in tests:
         w_packed = space.appexec([w_socket, space.wrap(ip)],
             "(_socket, ip): return _socket.inet_pton(_socket.AF_INET6, ip)")
@@ -208,6 +213,20 @@ def test_getaddrinfo(space, w_socket):
             return -1
         ''')
     assert space.unwrap(w_l) == True
+
+
+@pytest.mark.skipif("not hasattr(socket, 'sethostname')")
+def test_sethostname(space, w_socket):
+    space.raises_w(space.w_OSError, space.appexec,
+                   [w_socket],
+                   "(_socket): _socket.sethostname(_socket.gethostname())")
+
+
+@pytest.mark.skipif("not hasattr(socket, 'sethostname')")
+def test_sethostname_bytes(space, w_socket):
+    space.raises_w(space.w_OSError, space.appexec,
+                   [w_socket],
+                   "(_socket): _socket.sethostname(_socket.gethostname().encode())")
 
 
 def test_unknown_addr_as_object(space, ):
@@ -294,6 +313,16 @@ def test_timeout(space, w_socket):
 
 # XXX also need tests for other connection and timeout errors
 
+def test_type(space, w_socket):
+    w_bool = space.appexec([w_socket],
+                    """(_socket,):
+                    if not hasattr(_socket, 'SOCK_CLOEXEC'):
+                        return -1
+                    s = _socket.socket(_socket.AF_INET,
+                                    _socket.SOCK_STREAM | _socket.SOCK_CLOEXEC)
+                    return s.type == _socket.SOCK_STREAM
+                    """)
+    assert(space.bool_w(w_bool))
 
 class AppTestSocket:
     spaceconfig = dict(usemodules=['_socket', '_weakref', 'struct', 'select',
@@ -395,6 +424,7 @@ class AppTestSocket:
         if os.name != 'nt':
             raises(OSError, os.close, fileno)
 
+    @pytest.mark.skipif("sys.platform == 'win32'")
     def test_socket_close_exception(self):
         import _socket, errno
         s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM, 0)
@@ -402,6 +432,7 @@ class AppTestSocket:
         e = raises(OSError, s.close)
         assert e.value.errno in (errno.EBADF, errno.ENOTSOCK)
 
+    @pytest.mark.skipif("sys.platform == 'win32'")
     def test_setblocking_invalidfd(self):
         import _socket
         s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM, 0)
@@ -539,9 +570,9 @@ class AppTestSocket:
         else:
             assert ret == b'\x00\x00'
         s.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
-        assert s.getsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, 0) == 1
+        assert s.getsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, 0) != 0
         s.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, 1)
-        assert s.getsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, 0) == 1
+        assert s.getsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, 0) != 0
 
     def test_getsockopt_bad_length(self):
         import _socket
@@ -570,13 +601,15 @@ class AppTestSocket:
         raises(ValueError, s.ioctl, -1, None)
         s.ioctl(_socket.SIO_KEEPALIVE_VALS, (1, 100, 100))
 
+    @pytest.mark.skipif(os.name != 'nt', reason="win32 only")
     def test_socket_sharelocal(self):
         import _socket, sys, os
-        if sys.platform != 'win32':
-            skip("win32 only")
         assert hasattr(_socket.socket, 'share')
         s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-        s.listen()
+        with raises(OSError):
+            s.listen()
+        s.bind(('localhost', 0))
+        s.listen(1)
         data = s.share(os.getpid())
         # emulate socket.fromshare
         s2 = _socket.socket(0, 0, 0, data)
@@ -596,15 +629,18 @@ class AppTestSocket:
         s.bind(('localhost', 0))
         fd = socket.dup(s.fileno())
         assert s.fileno() != fd
-        assert os.get_inheritable(s.fileno()) is False
-        assert os.get_inheritable(fd) is False
-        os.close(fd)
+        if os.name != 'nt':
+            assert os.get_inheritable(s.fileno()) is False
+            assert os.get_inheritable(fd) is False
+        s_dup = socket.socket(fileno=fd)
+        s_dup.close()
         s.close()
 
     def test_dup_error(self):
         import _socket
         raises(_socket.error, _socket.dup, 123456)
 
+    @pytest.mark.skipif(os.name=='nt', reason="no recvmsg on win32")
     def test_recvmsg_issue2649(self):
         import _socket as socket
         listener = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
@@ -641,8 +677,12 @@ class AppTestSocket:
         s.close()
 
     def test_listen_default(self):
-        import _socket
-        _socket.socket().listen()
+        import _socket, sys
+        if sys.platform == 'win32':
+            with raises(OSError):
+                _socket.socket().listen()
+        else:
+            _socket.socket().listen()
         assert isinstance(_socket.SOMAXCONN, int)
 
     def test_unix_socket_connect(self):
@@ -726,7 +766,11 @@ class AppTestSocket:
     def test_socket_non_inheritable(self):
         import _socket, os
         s1 = _socket.socket()
-        assert os.get_inheritable(s1.fileno()) is False
+        if os.name == 'nt':
+            with raises(OSError):
+                os.get_inheritable(s1.fileno())
+        else:
+            assert os.get_inheritable(s1.fileno()) is False
         s1.close()
 
     def test_socketpair_non_inheritable(self):
@@ -750,6 +794,68 @@ class AppTestSocket:
         s.close()
         raises(TypeError, s.connect, (domain + '\x00', 80))
 
+    def test_socket_close(self):
+        import _socket
+        sock = _socket.socket()
+        try:
+            sock.bind(('localhost', 0))
+            _socket.close(sock.fileno())
+            with raises(OSError):
+                sock.listen(1)
+            with raises(OSError):
+                _socket.close(sock.fileno())
+        finally:
+            with raises(OSError):
+                sock.close()
+
+    def test_socket_get_values_from_fd(self):
+        import _socket
+        if hasattr(_socket, "SOCK_DGRAM"):
+            s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+            try:
+                s.bind(('localhost', 0))
+                fd = s.fileno()
+                s2 = _socket.socket(fileno=fd)
+                try:
+                    # detach old fd to avoid double close
+                    s.detach()
+                    assert s2.fileno() == fd
+                    assert s2.family == _socket.AF_INET
+                    assert s2.type == _socket.SOCK_DGRAM
+
+                finally:
+                    s2.close()
+            finally:
+                s.close()
+
+    def test_socket_init_non_blocking(self):
+        import _socket
+        if not hasattr(_socket, "SOCK_NONBLOCK"):
+            skip("no SOCK_NONBLOCK")
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM |
+                                            _socket.SOCK_NONBLOCK)
+        assert s.getblocking() == False
+        assert s.gettimeout() == 0.0
+
+    def test_socket_consistent_sock_type(self):
+        import _socket
+        SOCK_NONBLOCK = getattr(_socket, 'SOCK_NONBLOCK', 0)
+        SOCK_CLOEXEC = getattr(_socket, 'SOCK_CLOEXEC', 0)
+        sock_type = _socket.SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC
+
+        s = _socket.socket(_socket.AF_INET, sock_type)
+        try:
+            assert s.type == _socket.SOCK_STREAM
+            s.settimeout(1)
+            assert s.type == _socket.SOCK_STREAM
+            s.settimeout(0)
+            assert s.type == _socket.SOCK_STREAM
+            s.setblocking(True)
+            assert s.type == _socket.SOCK_STREAM
+            s.setblocking(False)
+            assert s.type == _socket.SOCK_STREAM
+        finally:
+            s.close()
 
 @pytest.mark.skipif(not hasattr(os, 'getpid'),
     reason="AF_NETLINK needs os.getpid()")
@@ -823,8 +929,10 @@ class AppTestSocketTCP:
             foo = self.serv._accept()
         raises(error, raise_error)
 
+    @pytest.mark.skipif(os.name == 'nt', reason="win32 has additional buffering")
     def test_recv_send_timeout(self):
         from _socket import socket, timeout, SOL_SOCKET, SO_RCVBUF, SO_SNDBUF
+        import sys
         cli = socket()
         cli.settimeout(1.0)
         cli.connect(self.serv.getsockname())
@@ -850,13 +958,20 @@ class AppTestSocketTCP:
         cli.setsockopt(SOL_SOCKET, SO_SNDBUF, 4096)
         # test send() timeout
         count = 0
-        try:
-            while 1:
-                count += cli.send(b'foobar' * 70)
-                assert count < 100000
-        except timeout:
-            pass
-        t.recv(count)
+        if sys.platform != 'win32':
+            # windows never fills the buffer
+            try:
+                while 1:
+                    count += cli.send(b'foobar' * 70)
+                    if sys.platform == 'darwin':
+                        # MacOS will auto-tune up to 512k
+                        # (net.inet.tcp.doauto{rcv,snd}buf sysctls)
+                        assert count < 1000000
+                    else:
+                        assert count < 100000
+            except timeout:
+                pass
+            t.recv(count)
         # test sendall() timeout
         try:
             while 1:
@@ -867,9 +982,16 @@ class AppTestSocketTCP:
         cli.close()
         t.close()
 
+    def test_getblocking(self):
+        self.serv.setblocking(True)
+        assert self.serv.getblocking()
+        self.serv.setblocking(False)
+        assert not self.serv.getblocking()
+
     def test_recv_into(self):
         import socket
         import array
+        import _io
         MSG = b'dupa was here\n'
         cli = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         cli.connect(self.serv.getsockname())
@@ -890,9 +1012,20 @@ class AppTestSocketTCP:
         msg = buf[:len(MSG)]
         assert msg == MSG
 
+        # A case where rwbuffer.get_raw_address() fails
+        conn.send(MSG)
+        buf = _io.BytesIO(b' ' * 1024)
+        m = buf.getbuffer()
+        nbytes = cli.recv_into(m)
+        assert nbytes == len(MSG)
+        msg = buf.getvalue()[:len(MSG)]
+        assert msg == MSG
+        conn.close()
+
     def test_recvfrom_into(self):
         import socket
         import array
+        import _io
         MSG = b'dupa was here\n'
         cli = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         cli.connect(self.serv.getsockname())
@@ -913,10 +1046,37 @@ class AppTestSocketTCP:
         msg = buf[:len(MSG)]
         assert msg == MSG
 
+        # A case where rwbuffer.get_raw_address() fails
+        conn.send(MSG)
+        buf = _io.BytesIO(b' ' * 1024)
+        nbytes, addr = cli.recvfrom_into(buf.getbuffer())
+        assert nbytes == len(MSG)
+        msg = buf.getvalue()[:len(MSG)]
+        assert msg == MSG
+
         conn.send(MSG)
         buf = bytearray(8)
         exc = raises(ValueError, cli.recvfrom_into, buf, 1024)
         assert str(exc.value) == "nbytes is greater than the length of the buffer"
+        conn.close()
+
+    @pytest.mark.skipif(os.name == 'nt', reason="no recvmg_into on win32")
+    def test_recvmsg_into(self):
+        import _socket
+        cli = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        cli.connect(self.serv.getsockname())
+        fileno, addr = self.serv._accept()
+        conn = _socket.socket(fileno=fileno)
+        conn.send(b'Hello World!')
+        buf1 = bytearray(5)
+        buf2 = bytearray(6)
+        rettup = cli.recvmsg_into([memoryview(buf1), memoryview(buf2)])
+        nbytes, _, _, addr = rettup
+        assert nbytes == 11
+        assert buf1 == b'Hello'
+        assert buf2 == b' World'
+        conn.close()
+        cli.close()
 
     def test_family(self):
         import socket
@@ -936,8 +1096,13 @@ class AppTestSocketTCP:
         cli = _socket.socket()
         cli.connect(self.serv.getsockname())
         fileno, addr = self.serv._accept()
-        assert os.get_inheritable(fileno) is False
-        os.close(fileno)
+        if os.name == 'nt':
+            with raises(OSError):
+                os.get_inheritable(fileno)
+        else:
+            assert os.get_inheritable(fileno) is False
+        conn = _socket.socket(fileno=fileno)
+        conn.close()
         cli.close()
 
     def test_recv_into_params(self):
@@ -946,18 +1111,21 @@ class AppTestSocketTCP:
         cli = _socket.socket()
         cli.connect(self.serv.getsockname())
         fileno, addr = self.serv._accept()
-        os.write(fileno, b"abcdef")
+        conn = _socket.socket(fileno=fileno)
+        conn.send(b"abcdef")
         #
         m = memoryview(bytearray(5))
         raises(ValueError, cli.recv_into, m, -1)
         raises(ValueError, cli.recv_into, m, 6)
-        cli.recv_into(m,5)
+        cli.recv_into(m, 5)
         assert m.tobytes() == b"abcde"
-        os.close(fileno)
+        conn.close()
         cli.close()
 
     def test_bytearray_name(self):
         import _socket as socket
+        if not hasattr(socket, 'AF_UNIX'):
+            skip('AF_UNIX not supported.')
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.bind(bytearray(b"\x00python\x00test\x00"))
         assert s.getsockname() == b"\x00python\x00test\x00"
@@ -965,7 +1133,7 @@ class AppTestSocketTCP:
     def test_no_socket_cloexec_non_block(self):
         import _socket
         #assert not hasattr(_socket, "SOCK_CLOEXEC") # not in py 2
-        assert not hasattr(_socket, "SOCK_NONBLOCK") # 3.7 only
+        #assert not hasattr(_socket, "SOCK_NONBLOCK") # 3.7 only
 
 
 class AppTestErrno:

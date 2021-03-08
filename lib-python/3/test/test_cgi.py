@@ -126,9 +126,41 @@ class CgiTests(unittest.TestCase):
         env = {'boundary': BOUNDARY.encode('latin1'),
                'CONTENT-LENGTH': '558'}
         result = cgi.parse_multipart(fp, env)
-        expected = {'submit': [b' Add '], 'id': [b'1234'],
-                    'file': [b'Testing 123.\n'], 'title': [b'']}
+        expected = {'submit': [' Add '], 'id': ['1234'],
+                    'file': [b'Testing 123.\n'], 'title': ['']}
         self.assertEqual(result, expected)
+
+    def test_parse_multipart_without_content_length(self):
+        POSTDATA = '''--JfISa01
+Content-Disposition: form-data; name="submit-name"
+
+just a string
+
+--JfISa01--
+'''
+        fp = BytesIO(POSTDATA.encode('latin1'))
+        env = {'boundary': 'JfISa01'.encode('latin1')}
+        result = cgi.parse_multipart(fp, env)
+        expected = {'submit-name': ['just a string\n']}
+        self.assertEqual(result, expected)
+
+    def test_parse_multipart_invalid_encoding(self):
+        BOUNDARY = "JfISa01"
+        POSTDATA = """--JfISa01
+Content-Disposition: form-data; name="submit-name"
+Content-Length: 3
+
+\u2603
+--JfISa01"""
+        fp = BytesIO(POSTDATA.encode('utf8'))
+        env = {'boundary': BOUNDARY.encode('latin1'),
+               'CONTENT-LENGTH': str(len(POSTDATA.encode('utf8')))}
+        result = cgi.parse_multipart(fp, env, encoding="ascii",
+                                     errors="surrogateescape")
+        expected = {'submit-name': ["\udce2\udc98\udc83"]}
+        self.assertEqual(result, expected)
+        self.assertEqual("\u2603".encode('utf8'),
+                         result["submit-name"][0].encode('utf8', 'surrogateescape'))
 
     def test_fieldstorage_properties(self):
         fs = cgi.FieldStorage()
@@ -344,6 +376,23 @@ Larry
         self.assertEqual(len(fs.list), 1)
         self.assertEqual(fs.list[0].name, 'submit-name')
         self.assertEqual(fs.list[0].value, 'Larry')
+
+    def test_field_storage_multipart_no_content_length(self):
+        fp = BytesIO(b"""--MyBoundary
+Content-Disposition: form-data; name="my-arg"; filename="foo"
+
+Test
+
+--MyBoundary--
+""")
+        env = {
+            "REQUEST_METHOD": "POST",
+            "CONTENT_TYPE": "multipart/form-data; boundary=MyBoundary",
+            "wsgi.input": fp,
+        }
+        fields = cgi.FieldStorage(fp, environ=env)
+
+        self.assertEqual(len(fields["my-arg"].file.read()), 5)
 
     def test_fieldstorage_as_context_manager(self):
         fp = BytesIO(b'x' * 10)

@@ -30,6 +30,11 @@ RENAMED_USEMODULES = {
     'operator': '_operator',
     'signal': '_signal',
     'imp': '_imp'}
+if sys.platform == 'win32':
+    RENAMED_USEMODULES['posix'] = 'nt'
+
+if sys.platform == 'win32':
+    RENAMED_USEMODULES['posix'] = 'nt'
 
 class AppError(Exception):
     def __init__(self, excinfo):
@@ -185,7 +190,7 @@ def run_with_python(python_, target_, usemodules, **definitions):
             # They may be extension modules on CPython
             name = None
             for name in missing.copy():
-                if name in ['cpyext', '_cffi_backend']:
+                if name in ['cpyext', '_cffi_backend', '_rawffi']:
                     missing.remove(name)
                     continue
                 try:
@@ -298,12 +303,12 @@ class AppTestMethod(py.test.collect.Function):
                 else:
                     obj = getattr(instance, name)
                     if isinstance(obj, types.MethodType):
-                        source = py.std.inspect.getsource(obj).lstrip()
+                        source = py.code.Source(obj).indent()
                         w_func = space.appexec([], textwrap.dedent("""
                         ():
-                            %s
+                        %s
                             return %s
-                        """) % (source, name))
+                        """) % (source, obj.__name__))
                         w_obj = Method(space, w_func, w_instance)
                     else:
                         w_obj = obj
@@ -366,4 +371,3 @@ class AppClassCollector(py.test.Class):
                                           space.newtuple([]),
                                           space.newdict())
         self.w_class = w_class
-

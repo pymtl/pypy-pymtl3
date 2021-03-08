@@ -118,7 +118,7 @@ class wrap_ternaryfunc(W_PyCWrapperObject):
         return generic_cpy_call(space, func_ternary, w_self, w_arg0, w_arg1)
 
 class wrap_ternaryfunc_r(W_PyCWrapperObject):
-    def call(self, space, w_self, __args__):    
+    def call(self, space, w_self, __args__):
         # The third argument is optional
         self.check_argsv(__args__, 1, 2)
         func = self.get_func_to_call()
@@ -259,7 +259,7 @@ class wrap_lenfunc(W_PyCWrapperObject):
             space.fromcache(State).check_and_raise_exception(always=True)
         return space.newint(res)
 
-class wrap_sq_item(W_PyCWrapperObject):
+class wrap_ssizeargproc(W_PyCWrapperObject):
     def call(self, space, w_self, __args__):
         self.check_args(__args__, 1)
         func = self.get_func_to_call()
@@ -592,7 +592,6 @@ def make_binary_slot_int(space, typedef, name, attr):
 BINARY_SLOTS_INT = [
     'tp_as_sequence.c_sq_item',
     'tp_as_sequence.c_sq_repeat',
-    'tp_as_sequence.c_sq_repeat',
     'tp_as_sequence.c_sq_inplace_repeat',]
 for name in BINARY_SLOTS_INT:
     slot_factory(name)(make_binary_slot_int)
@@ -832,6 +831,33 @@ def make_tp_descr_set(space, typedef, name, attr):
         return 0
     return slot_tp_descr_set
 
+def slot_from_buffer_w(space, typedef):
+    name = 'bf_getbuffer'
+    @slot_function([PyObject, Py_bufferP, rffi.INT_real],
+            rffi.INT_real, error=-1)
+    @func_renamer("cpyext_%s_%s" % (name, typedef.name))
+    def buff_w(space, w_self, c_view, flags):
+        w_obj = w_self
+        if c_view:
+            #like PyObject_GetBuffer
+            flags = widen(flags)
+            buf = space.buffer_w(w_obj, flags)
+            try:
+                c_view.c_buf = rffi.cast(rffi.VOIDP, buf.get_raw_address())
+                c_view.c_obj = make_ref(space, w_obj)
+                if space.isinstance_w(w_obj, space.w_bytes):
+                    rffi.setintfield(c_view, 'c_readonly', 1)
+            except ValueError:
+                s = buf.as_str()
+                w_s = space.newbytes(s)
+                c_view.c_obj = make_ref(space, w_s)
+                c_view.c_buf = rffi.cast(rffi.VOIDP, rffi.str2charp(
+                                        s, track_allocation=False))
+                rffi.setintfield(c_view, 'c_readonly', 1)
+            ret = fill_Py_buffer(space, buf, c_view)
+            return ret
+        return 0
+    return buff_w
 
 def _make_missing_wrapper(name):
     assert name not in globals()
@@ -842,7 +868,7 @@ def _make_missing_wrapper(name):
     missing_wrapper.__name__ = name
     globals()[name] = missing_wrapper
 
-missing_wrappers = ['wrap_indexargfunc', 'wrap_del']
+missing_wrappers = ['wrap_del']
 for name in missing_wrappers:
     _make_missing_wrapper(name)
 
@@ -1112,11 +1138,11 @@ static slotdef slotdefs[] = {
 
     SQSLOT("__add__", sq_concat, NULL, wrap_binaryfunc,
            "__add__($self, value, /)\n--\n\nReturn self+value."),
-    SQSLOT("__mul__", sq_repeat, NULL, wrap_indexargfunc,
+    SQSLOT("__mul__", sq_repeat, NULL, wrap_ssizeargproc,
            "__mul__($self, value, /)\n--\n\nReturn self*value.n"),
-    SQSLOT("__rmul__", sq_repeat, NULL, wrap_indexargfunc,
+    SQSLOT("__rmul__", sq_repeat, NULL, wrap_ssizeargproc,
            "__rmul__($self, value, /)\n--\n\nReturn self*value."),
-    SQSLOT("__getitem__", sq_item, slot_sq_item, wrap_sq_item,
+    SQSLOT("__getitem__", sq_item, slot_sq_item, wrap_ssizeargproc,
            "__getitem__($self, key, /)\n--\n\nReturn self[key]."),
     SQSLOT("__setitem__", sq_ass_item, slot_sq_ass_item, wrap_sq_setitem,
            "__setitem__($self, key, value, /)\n--\n\nSet self[key] to value."),
@@ -1128,7 +1154,7 @@ static slotdef slotdefs[] = {
            wrap_binaryfunc,
            "__iadd__($self, value, /)\n--\n\nImplement self+=value."),
     SQSLOT("__imul__", sq_inplace_repeat, NULL,
-           wrap_indexargfunc,
+           wrap_ssizeargproc,
            "__imul__($self, value, /)\n--\n\nImplement self*=value."),
 
     {NULL}

@@ -17,6 +17,7 @@ all_modules = [p.basename for p in modulepath.listdir()
 essential_modules = set([
     "exceptions", "_io", "sys", "builtins", "posix", "_warnings",
     "itertools", "_frozen_importlib", "operator", "_locale", "struct",
+    "thread", "__pypy__",
 ])
 if sys.platform == "win32":
     essential_modules.add("_winreg")
@@ -25,8 +26,8 @@ default_modules = essential_modules.copy()
 default_modules.update([
     "_codecs", "atexit", "gc", "_weakref", "marshal", "errno", "imp",
     "itertools", "math", "cmath", "_sre", "_pickle_support",
-    "parser", "symbol", "token", "_ast", "_random", "__pypy__",
-    "_string", "_testing", "time"
+    "parser", "symbol", "token", "_ast", "_random",
+    "_string", "_testing", "time", "_abc",
 ])
 
 
@@ -36,11 +37,11 @@ working_modules.update([
     "_socket", "unicodedata", "mmap", "fcntl", "pwd",
     "select", "zipimport", "_lsprof", "signal", "_rawffi", "termios",
     "zlib", "bz2", "_md5", "_minimal_curses",
-    "thread", "itertools", "pyexpat", "cpyext", "array",
+    "itertools", "pyexpat", "cpyext", "array",
     "binascii", "_multiprocessing", '_warnings', "_collections",
     "_multibytecodec", "_continuation", "_cffi_backend",
     "_csv", "_pypyjson", "_posixsubprocess", "_cppyy", # "micronumpy",
-    "_jitlog",
+    "_jitlog", "_hpy_universal"
     # "_hashlib", "crypt"
 ])
 
@@ -89,6 +90,10 @@ if sys.platform == "sunos5":
     if "_cppyy" in working_modules:
         working_modules.remove("_cppyy")  # depends on ctypes
 
+if 1 or sys.platform.startswith('linux') and sys.maxsize <= 2**31:
+    # _hpy_universal needs tweaking to work on 32-bit linux
+    working_modules.remove('_hpy_universal')
+
 #if sys.platform.startswith("linux"):
 #    _mach = os.popen('uname -m', 'r').read().strip()
 #    if _mach.startswith(...):
@@ -98,6 +103,7 @@ if sys.platform == "sunos5":
 module_dependencies = {
     '_multiprocessing': [('objspace.usemodules.time', True),
                          ('objspace.usemodules.thread', True)],
+    '_cffi_backend': [('objspace.usemodules.thread', True)],
     'cpyext': [('objspace.usemodules.array', True)],
     '_cppyy': [('objspace.usemodules.cpyext', True)],
     'faulthandler': [('objspace.usemodules._vmprof', True)],
@@ -174,6 +180,10 @@ pypy_optiondescription = OptionDescription("objspace", "Object Space Options", [
                  ["fnv", "siphash24"],
                  default="siphash24",
                  cmdline="--hash"),
+
+    BoolOption("hpy_cpyext_API",
+               "Enable the HPy/cpyext API in the hpy_universal module",
+               default=True),
 
     OptionDescription("std", "Standard Object Space Options", [
         BoolOption("withtproxy", "support transparent proxies",

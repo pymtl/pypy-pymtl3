@@ -733,6 +733,7 @@ class CTypeSpace(object):
             if tp.type_name is None:
                 tp.type_name = name
             tp = self.realize_struct(tp)
+            self.structs[obj.realtype] = tp
         self.definitions[name] = tp
 
     def add_macro(self, name, value):
@@ -755,6 +756,8 @@ class CTypeSpace(object):
         tp = self.convert_type(obj)
         if isinstance(tp, DelayedStruct):
             tp = tp.TYPE
+        elif isinstance(tp, type) and issubclass(tp, Enum):
+            tp = rffi.INT_real
         return tp
 
     def realize_struct(self, struct):
@@ -837,6 +840,11 @@ class CTypeSpace(object):
             return lltype.Void
         elif isinstance(obj, model.ArrayType):
             return rffi.CFixedArray(self.convert_type(obj.item), obj.length)
+        elif isinstance(obj, model.EnumType):
+            enum = type(obj.forcename, (Enum,), {})
+            for key, value in zip(obj.enumerators, obj.enumvalues):
+                setattr(enum, key, value)
+            return enum
         else:
             raise NotImplementedError
 
@@ -888,6 +896,9 @@ class CTypeSpace(object):
 
         self._frozen = True
         return True
+
+class Enum(object):
+    pass
 
 class FunctionDeclaration(object):
     def __init__(self, name, tp):

@@ -13,6 +13,7 @@ class AppTestBinascii(object):
         for input, expected in [
             (b"!,_", b"3"),
             (b" ", b""),
+            (b"`", b""),
             (b"!", b"\x00"),
             (b"!6", b"X"),
             (b'"6', b"X\x00"),
@@ -30,12 +31,18 @@ class AppTestBinascii(object):
             (b')WAXR6UBA3#Q', b"\xde\x1e2[X\xa1L<@"),
             (b'*WAXR6UBA3#Q!5', b"\xde\x1e2[X\xa1L<AT"),
             (b'!,_', b'\x33'),
+            (b'$  $" P  ', b'\x00\x01\x02\x03'),
+            (b'$``$"`P``', b'\x00\x01\x02\x03'),
             ]:
             assert self.binascii.a2b_uu(input) == expected
             assert self.binascii.a2b_uu(input + b' ') == expected
             assert self.binascii.a2b_uu(input + b'  ') == expected
             assert self.binascii.a2b_uu(input + b'   ') == expected
             assert self.binascii.a2b_uu(input + b'    ') == expected
+            assert self.binascii.a2b_uu(input + b'`') == expected
+            assert self.binascii.a2b_uu(input + b'``') == expected
+            assert self.binascii.a2b_uu(input + b'```') == expected
+            assert self.binascii.a2b_uu(input + b'````') == expected
             assert self.binascii.a2b_uu(input + b'\n') == expected
             assert self.binascii.a2b_uu(input + b'\r\n') == expected
             assert self.binascii.a2b_uu(input + b'  \r\n') == expected
@@ -84,7 +91,12 @@ class AppTestBinascii(object):
             (b"\xde\x1e2[X\xa1L<@", b')WAXR6UBA3#Q '),
             (b"\xde\x1e2[X\xa1L<AT", b'*WAXR6UBA3#Q!5   '),
             ]:
-            assert self.binascii.b2a_uu(input) == expected + b'\n'
+            for backtick in [None, True, False]:
+                if backtick is None:
+                    assert self.binascii.b2a_uu(input) == expected + b'\n'
+                else:
+                    really_expected = expected.replace(b' ', b'`') if backtick else expected
+                    assert self.binascii.b2a_uu(input, backtick=backtick) == really_expected + b'\n'
 
     def test_a2b_base64(self):
         for input, expected in [
@@ -351,8 +363,18 @@ class AppTestBinascii(object):
             (b'x', 10000, 47898),
             (b'y', 10000, 43835),
             (b'z', 10000, 39768),
+            (b'', -1, 65535)
             ]:
             assert self.binascii.crc_hqx(input, initial) == expected
+
+    def test_crc_hqx_ovf_bug(self):
+        import sys
+        if sys.maxsize == 2 ** 32 - 1:
+            big = 2 ** 32
+        else:
+            big = 2 ** 63
+        assert self.binascii.crc_hqx(b'', big) == 0
+        assert self.binascii.crc_hqx(b'', -big) == 0
 
     def test_crc32(self):
         for input, initial, expected in [

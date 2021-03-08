@@ -11,11 +11,14 @@ except ImportError:
 from rpython.rlib import rposix, rposix_stat, rfile
 from rpython.rlib import objectmodel, rurandom
 from rpython.rlib.objectmodel import specialize, not_rpython
-from rpython.rlib.rarithmetic import r_longlong, intmask, r_uint, r_int
+from rpython.rlib.rarithmetic import (
+    r_longlong, intmask, r_uint, r_int, INT_MIN, INT_MAX)
+
 from rpython.rlib.unroll import unrolling_iterable
-from rpython.rtyper.lltypesystem import lltype
+from rpython.rtyper.lltypesystem import lltype, rffi
 from rpython.tool.sourcetools import func_with_new_name
 
+from pypy.interpreter.buffer import BufferInterfaceNotFound
 from pypy.interpreter.gateway import unwrap_spec, WrappedDefault, Unwrapper
 from pypy.interpreter.error import (
     OperationError, oefmt, wrap_oserror, wrap_oserror2, strerror as _strerror,
@@ -146,31 +149,74 @@ class Path(object):
                         ', ', str(self.as_unicode), ', [', str(self.w_path),
                         ', ', str(getattr(self.w_path, '_length', 'bytes')), '])'])
 
-@specialize.arg(2)
-def _unwrap_path(space, w_value, allow_fd=True):
-    # equivalent of posixmodule.c:path_converter() in CPython
-    if allow_fd:
-        allowed_types = "string, bytes, os.PathLike or integer"
-    else:
-        allowed_types = "string, bytes or os.PathLike"
-    if _WIN32 and space.isinstance_w(w_value, space.w_unicode):
+def _path_from_unicode(space, w_value):
+    if _WIN32:
         path_u = FileEncoder(space, w_value).as_unicode()
         return Path(-1, None, path_u, w_value)
-    try:
-        path_b = space.fsencode_w(w_value, allowed_types=allowed_types)
+    else:
+        path_b = space.bytes0_w(space.fsencode(w_value))
         return Path(-1, path_b, None, w_value)
-    except OperationError as e:
-        if not allow_fd or not e.match(space, space.w_TypeError):
-            raise
-        # File descriptor case
+
+def _path_from_bytes(space, w_value):
+    path_b = space.bytes0_w(w_value)
+    return Path(-1, path_b, None, w_value)
+
+@specialize.arg(2, 3)
+def _unwrap_path(space, w_value, allow_fd=True, nullable=False):
+    # equivalent of posixmodule.c:path_converter() in CPython
+    if nullable:
+        if allow_fd:
+            allowed_types = "string, bytes, os.PathLike, integer or None"
+        else:
+            allowed_types = "string, bytes, os.PathLike or None"
+    else:
+        if allow_fd:
+            allowed_types = "string, bytes, os.PathLike or integer"
+        else:
+            allowed_types = "string, bytes or os.PathLike"
+    if nullable and space.is_w(w_value, space.w_None):
+        return Path(-1, '.', None, space.w_None)
+    if space.isinstance_w(w_value, space.w_unicode):
+        return _path_from_unicode(space, w_value)
+    elif space.isinstance_w(w_value, space.w_bytes):
+        return _path_from_bytes(space, w_value)
+
+    # Bytes-like case
+    try:
+        space._try_buffer_w(w_value, space.BUF_FULL_RO)
+    except BufferInterfaceNotFound:
+        pass
+    else:
+        tp = space.type(w_value).name
+        space.warn(space.newtext(
+            "path should be %s, not %s" % (allowed_types, tp,)),
+            space.w_DeprecationWarning)
+        path_b = space.bytesbuf0_w(w_value)
+        return Path(-1, path_b, None, w_value)
+
+    # File descriptor case
+    if allow_fd:
         try:
             space.index(w_value)
         except OperationError:
-            raise oefmt(space.w_TypeError,
-                        "illegal type for path parameter (should be "
-                        "%s, not %T)", allowed_types, w_value)
-        fd = unwrap_fd(space, w_value, allowed_types)
-        return Path(fd, None, None, w_value)
+            pass
+        else:
+            fd = unwrap_fd(space, w_value, allowed_types)
+            return Path(fd, None, None, w_value)
+
+    # PathLike case
+    # inline fspath() for better error messages
+    w_fspath_method = space.lookup(w_value, '__fspath__')
+    if w_fspath_method:
+        w_result = space.get_and_call_function(w_fspath_method, w_value)
+        if space.isinstance_w(w_result, space.w_unicode):
+            return _path_from_unicode(space, w_result)
+        elif space.isinstance_w(w_result, space.w_bytes):
+            return _path_from_bytes(space, w_result)
+
+    raise oefmt(space.w_TypeError,
+        "illegal type for path parameter (should be "
+        "%s, not %T)", allowed_types, w_value)
 
 class _PathOrFd(Unwrapper):
     def unwrap(self, space, w_value):
@@ -180,8 +226,20 @@ class _JustPath(Unwrapper):
     def unwrap(self, space, w_value):
         return _unwrap_path(space, w_value, allow_fd=False)
 
-def path_or_fd(allow_fd=True):
-    return _PathOrFd if allow_fd else _JustPath
+class _NullablePathOrFd(Unwrapper):
+    def unwrap(self, space, w_value):
+        return _unwrap_path(space, w_value, allow_fd=True, nullable=True)
+
+class _NullablePath(Unwrapper):
+    def unwrap(self, space, w_value):
+        return _unwrap_path(space, w_value, allow_fd=False, nullable=True)
+
+
+def path_or_fd(allow_fd=True, nullable=False):
+    if nullable:
+        return _NullablePathOrFd if allow_fd else _NullablePath
+    else:
+        return _PathOrFd if allow_fd else _JustPath
 
 _HAVE_AT_FDCWD = getattr(rposix, 'AT_FDCWD', None) is not None
 DEFAULT_DIR_FD = rposix.AT_FDCWD if _HAVE_AT_FDCWD else -100
@@ -235,7 +293,7 @@ def u2utf8(space, u_str):
     return space.newutf8(u_str.encode('utf-8'), len(u_str))
 
 @unwrap_spec(flags=c_int, mode=c_int, dir_fd=DirFD(rposix.HAVE_OPENAT))
-def open(space, w_path, flags, mode=0777,
+def open(space, w_path, flags, mode=0o777,
          __kwonly__=None, dir_fd=DEFAULT_DIR_FD):
     """open(path, flags, mode=0o777, *, dir_fd=None)
 
@@ -333,7 +391,7 @@ def ftruncate(space, fd, length):
     """Truncate a file (by file descriptor) to a specified length."""
     while True:
         try:
-            os.ftruncate(fd, length)
+            rposix.ftruncate(fd, length)
             break
         except OSError as e:
             wrap_oserror(space, e, eintr_retry=True)
@@ -765,21 +823,20 @@ dir_fd may not be implemented on your platform.
     except OSError as e:
         raise wrap_oserror2(space, e, path.w_path, eintr_retry=False)
 
-def _getfullpathname(space, w_path):
-    """helper for ntpath.abspath """
-    try:
-        if space.isinstance_w(w_path, space.w_unicode):
-            path = FileEncoder(space, w_path)
-            fullpath = rposix.getfullpathname(path)
-            w_fullpath = u2utf8(space, fullpath)
-        else:
-            path = space.bytesbuf0_w(w_path)
-            fullpath = rposix.getfullpathname(path)
-            w_fullpath = space.newbytes(fullpath)
-    except OSError as e:
-        raise wrap_oserror2(space, e, w_path, eintr_retry=False)
-    else:
-        return w_fullpath
+if _WIN32:
+    @unwrap_spec(path=path_or_fd(allow_fd=False, nullable=False))
+    def _getfullpathname(space, path):
+        """helper for ntpath.abspath """
+        try:
+            if path.as_unicode is not None:
+                result = rposix.getfullpathname(path.as_unicode)
+                return u2utf8(space, result)
+            else:
+                result = rposix.getfullpathname(path.as_bytes)
+                return space.newbytes(result)
+        except OSError as e:
+            raise wrap_oserror2(space, e, path.w_path, eintr_retry=False)
+
 
 def getcwdb(space):
     """Return the current working directory."""
@@ -930,6 +987,26 @@ if _WIN32:
             rwin32._wputenv(name, value)
         except OSError as e:
             raise wrap_oserror(space, e, eintr_retry=False)
+
+    @unwrap_spec(name=unicode)
+    def unsetenv(space, name):
+        """Change or add an environment variable."""
+        # Search from index 1 because on Windows starting '=' is allowed for
+        # defining hidden environment variables.
+        if len(name) == 0 or u'=' in name[1:]:
+            raise oefmt(space.w_ValueError, "illegal environment variable name")
+
+        # len includes space for '=' and a trailing NUL
+        if len(name) + 1 > rwin32._MAX_ENV:
+            raise oefmt(space.w_ValueError,
+                        "the environment variable is longer than %d "
+                        "characters", rwin32._MAX_ENV)
+
+        try:
+            rwin32.SetEnvironmentVariableW(name, None)
+        except OSError as e:
+            raise wrap_oserror(space, e, eintr_retry=False)
+
 else:
     def _convertenviron(space, w_env):
         for key, value in os.environ.items():
@@ -964,56 +1041,73 @@ else:
             raise wrap_oserror(space, e, eintr_retry=False)
 
 
-def listdir(space, w_path=None):
-    """listdir(path='.') -> list_of_filenames
-
+@unwrap_spec(path=path_or_fd(allow_fd=rposix.HAVE_FDOPENDIR, nullable=True))
+def listdir(space, path=None):
+    """\
 Return a list containing the names of the files in the directory.
-The list is in arbitrary order.  It does not include the special
-entries '.' and '..' even if they are present in the directory.
 
-path can be specified as either str or bytes.  If path is bytes,
+path can be specified as either str, bytes, or a path-like object.  If path is bytes,
   the filenames returned will also be bytes; in all other circumstances
   the filenames returned will be str.
-On some platforms, path may also be specified as an open file descriptor;
+If path is None, uses the path='.'.
+On some platforms, path may also be specified as an open file descriptor;\
   the file descriptor must refer to a directory.
-  If this functionality is unavailable, using it raises NotImplementedError."""
-    if space.is_none(w_path):
-        w_path = space.newtext(".")
-    if space.isinstance_w(w_path, space.w_bytes):
-        # XXX CPython doesn't follow this path either if w_path is,
-        # for example, a memoryview or another buffer type
-        dirname = space.bytes0_w(w_path)
-        try:
-            result = rposix.listdir(dirname)
-        except OSError as e:
-            raise wrap_oserror2(space, e, w_path, eintr_retry=False)
-        return space.newlist_bytes(result)
+  If this functionality is unavailable, using it raises NotImplementedError.
+
+The list is in arbitrary order.  It does not include the special
+entries '.' and '..' even if they are present in the directory."""
+
     try:
-        path = space.fsencode_w(w_path)
-    except OperationError as operr:
-        if operr.async(space):
-            raise
+        space._try_buffer_w(path.w_path, space.BUF_FULL_RO)
+    except BufferInterfaceNotFound:
+        as_bytes = False
+    else:
+        as_bytes = True
+    if path.as_fd != -1:
         if not rposix.HAVE_FDOPENDIR:
+            # needed for translation, in practice this is dead code
             raise oefmt(space.w_TypeError,
                 "listdir: illegal type for path argument")
-        fd = unwrap_fd(space, w_path, "string, bytes or integer")
         try:
-            result = rposix.fdlistdir(os.dup(fd))
+            result = rposix.fdlistdir(os.dup(path.as_fd))
         except OSError as e:
             raise wrap_oserror(space, e, eintr_retry=False)
-    else:
+        return space.newlist([space.newfilename(f) for f in result])
+    elif as_bytes:
         try:
-            result = rposix.listdir(path)
+            result = rposix.listdir(path.as_bytes)
         except OSError as e:
-            raise wrap_oserror2(space, e, w_path, eintr_retry=False)
-    len_result = len(result)
-    result_w = [None] * len_result
-    for i in range(len_result):
-        if _WIN32:
-            result_w[i] = space.newtext(result[i])
-        else:
+            raise wrap_oserror2(space, e, path.w_path, eintr_retry=False)
+        return space.newlist_bytes(result)
+    else:
+        # The annotator needs result_u and result to be different
+        u = path.as_unicode
+        result_u = []
+        result = []
+        try:
+            if u:
+                result_u = rposix.listdir(path.as_unicode)
+            elif path.as_bytes:
+                result = rposix.listdir(path.as_bytes)
+            else:
+                # rposix.listdir will raise the error, but None is invalid here
+                result = rposix.listdir('')
+        except OSError as e:
+            raise wrap_oserror2(space, e, path.w_path, eintr_retry=False)
+        if u:
+            len_result = len(result_u)
+            result_w = [None] * len_result
+            for i in range(len_result):
+                result_w[i] = result_u[i].encode('utf-8')
+            return space.newlist_text(result_w)
+        elif _WIN32:
+            return space.newlist_utf8(result, True)
+        # only non-_WIN32
+        len_result = len(result)
+        result_w = [None] * len_result
+        for i in range(len_result):
             result_w[i] = space.newfilename(result[i])
-    return space.newlist(result_w)
+        return space.newlist(result_w)
 
 @unwrap_spec(fd=c_int)
 def get_inheritable(space, fd):
@@ -1180,7 +1274,7 @@ src_dir_fd and dst_dir_fd, may not be implemented on your platform.
                             eintr_retry=False)
 
 @unwrap_spec(mode=c_int, dir_fd=DirFD(rposix.HAVE_MKFIFOAT))
-def mkfifo(space, w_path, mode=0666, __kwonly__=None, dir_fd=DEFAULT_DIR_FD):
+def mkfifo(space, w_path, mode=0o666, __kwonly__=None, dir_fd=DEFAULT_DIR_FD):
     """mkfifo(path, mode=0o666, *, dir_fd=None)
 
 Create a FIFO (a POSIX named pipe).
@@ -1407,6 +1501,103 @@ def fork(space):
     pid, irrelevant = _run_forking_function(space, "F")
     return space.newint(pid)
 
+class ApplevelForkCallbacks(object):
+    def __init__(self, space):
+        self.space = space
+        self.before_w = []
+        self.parent_w = []
+        self.child_w = []
+
+def register_at_fork(space, __args__):
+    """
+    register_at_fork(*, [before], [after_in_child], [after_in_parent])
+    Register callables to be called when forking a new process.
+
+      before
+        A callable to be called in the parent before the fork() syscall.
+      after_in_child
+        A callable to be called in the child after fork().
+      after_in_parent
+        A callable to be called in the parent after fork().
+
+    'before' callbacks are called in reverse order.
+    'after_in_child' and 'after_in_parent' callbacks are called in order.
+    """
+    # annoying, can't express argument parsing of this nicely
+    # because cpython explicitly wants
+    # os.register_at_fork(before=None, after_in_parent=<callable>)
+    # to fail, and we can't use unwrapped None as a kwonly default
+    args_w, kwargs_w = __args__.unpack()
+    if args_w:
+        raise oefmt(space.w_TypeError,
+            "register_at_fork() takes no positional arguments")
+    w_before = kwargs_w.pop("before", None)
+    w_after_in_parent = kwargs_w.pop("after_in_parent", None)
+    w_after_in_child = kwargs_w.pop("after_in_child", None)
+    if kwargs_w:
+        for key in kwargs_w:
+            raise oefmt(space.w_TypeError,
+                "%s is an invalid keyword argument for register_at_fork()", key)
+
+    registered = False
+    cbs = space.fromcache(ApplevelForkCallbacks)
+    if w_before is not None:
+        if not space.callable_w(w_before):
+            raise oefmt(space.w_TypeError,
+                    "'before' must be callable, not %T",
+                    w_before)
+        cbs.before_w.append(w_before)
+        registered = True
+    if w_after_in_parent is not None:
+        if not space.callable_w(w_after_in_parent):
+            raise oefmt(space.w_TypeError,
+                    "'after_in_parent' must be callable, not %T",
+                    w_after_in_parent)
+        cbs.parent_w.append(w_after_in_parent)
+        registered = True
+    if w_after_in_child is not None:
+        if not space.callable_w(w_after_in_child):
+            raise oefmt(space.w_TypeError,
+                    "'after_in_child' must be callable, not %T",
+                    w_after_in_child)
+        cbs.child_w.append(w_after_in_child)
+        registered = True
+    if not registered:
+        raise oefmt(space.w_TypeError,
+            "At least one argument is required.")
+
+
+def _run_applevel_hook(space, w_callable):
+    try:
+        space.call_function(w_callable)
+    except OperationError as e:
+        e.write_unraisable(space, "fork hook")
+
+def run_applevel_fork_hooks(space, l_w, reverse=False):
+    if not reverse:
+        for i in range(len(l_w)): # callable can append to the list
+            _run_applevel_hook(space, l_w[i])
+    else:
+        for i in range(len(l_w) - 1, -1, -1):
+            _run_applevel_hook(space, l_w[i])
+
+def run_applevel_fork_hooks_before(space):
+    cbs = space.fromcache(ApplevelForkCallbacks)
+    run_applevel_fork_hooks(space, cbs.before_w, reverse=True)
+
+def run_applevel_fork_hooks_parent(space):
+    cbs = space.fromcache(ApplevelForkCallbacks)
+    run_applevel_fork_hooks(space, cbs.parent_w)
+
+def run_applevel_fork_hooks_child(space):
+    cbs = space.fromcache(ApplevelForkCallbacks)
+    run_applevel_fork_hooks(space, cbs.child_w)
+
+add_fork_hook('before', run_applevel_fork_hooks_before)
+add_fork_hook('parent', run_applevel_fork_hooks_parent)
+add_fork_hook('child', run_applevel_fork_hooks_child)
+
+
 def openpty(space):
     "Open a pseudo-terminal, returning open fd's for both master and slave end."
     master_fd = slave_fd = -1
@@ -1500,6 +1691,9 @@ On some platforms, you may specify an open file descriptor for path;
         raise oefmt(space.w_TypeError,
             "execve: argv must be a tuple or a list")
     args = [space.fsencode_w(w_arg) for w_arg in space.unpackiterable(w_argv)]
+    if len(args) < 1:
+        raise oefmt(space.w_ValueError,
+            "execve() arg 2 must not be empty")
     env = _env2interp(space, w_env)
     try:
         path = space.fsencode_w(w_path)
@@ -2330,6 +2524,22 @@ if _WIN32:
             raise wrap_oserror2(space, e, w_path, eintr_retry=False)
         return space.newtext(s, lgt)
 
+    @unwrap_spec(fd=c_int)
+    def get_handle_inheritable(space, fd):
+        handle = rffi.cast(rwin32.HANDLE, fd)
+        try:
+            return space.newbool(rwin32.get_handle_inheritable(handle))
+        except OSError as e:
+            raise wrap_oserror(space, e, eintr_retry=False)
+
+    @unwrap_spec(fd=c_int, inheritable=bool)
+    def set_handle_inheritable(space, fd, inheritable):
+        handle = rffi.cast(rwin32.HANDLE, fd)
+        try:
+            rwin32.set_handle_inheritable(handle, inheritable)
+        except OSError as e:
+            raise wrap_oserror(space, e, eintr_retry=False)
+
 
 def chflags():
     """chflags(path, flags, *, follow_symlinks=True)
@@ -2669,3 +2879,78 @@ def fspath(space, w_path):
         w_path,
         w_result
     )
+
+
+@unwrap_spec(pid=int)
+def sched_rr_get_interval(space, pid):
+    """ get execution time limits. """
+
+    try:
+        res = rposix.sched_rr_get_interval(pid)
+    except OSError as e:
+        wrap_oserror(space, e, eintr_retry=True)
+    else:
+        return space.newfloat(res)
+
+
+@unwrap_spec(pid=int)
+def sched_getscheduler(space, pid):
+    """ get scheduling policy/parameters. """
+
+    try:
+        res = rposix.sched_getscheduler(pid)
+    except OSError as e:
+        wrap_oserror(space, e, eintr_retry=True)
+    else:
+        return space.newint(res)
+
+
+@unwrap_spec(pid=int, policy=int)
+def sched_setscheduler(space, pid, policy, w_param):
+    """ set scheduling policy/parameters. """
+    w_sched_param = space.getattr(space.getbuiltinmodule(os.name),
+                                  space.newtext('sched_param'))
+    if not space.isinstance_w(w_param, w_sched_param):
+        raise oefmt(space.w_TypeError, "must have a sched_param object")
+    priority = space.int_w(space.getitem(w_param, space.newint(0)))
+    if priority > INT_MAX or priority < INT_MIN:
+        raise oefmt(space.w_OverflowError, "sched_priority %d out of range", priority)
+    try:
+        res = rposix.sched_setscheduler(pid, policy, priority)
+    except OSError as e:
+        wrap_oserror(space, e, eintr_retry=True)
+    else:
+        return space.newint(res)
+
+
+@unwrap_spec(pid=int)
+def sched_getparam(space, pid):
+    """ get scheduling parameters. """
+
+    try:
+        res = rposix.sched_getparam(pid)
+    except OSError as e:
+        wrap_oserror(space, e, eintr_retry=True)
+    else:
+        w_sched_param = space.getattr(space.getbuiltinmodule(os.name),
+                                      space.newtext('sched_param'))
+
+        return space.call_function(w_sched_param, space.newint(res))
+
+
+@unwrap_spec(pid=int, )
+def sched_setparam(space, pid, w_param):
+    """ set scheduling parameters. """
+    w_sched_param = space.getattr(space.getbuiltinmodule(os.name),
+                                  space.newtext('sched_param'))
+    if not space.isinstance_w(w_param, w_sched_param):
+        raise oefmt(space.w_TypeError, "must have a sched_param object")
+    priority = space.int_w(space.getitem(w_param, space.newint(0)))
+    if priority > INT_MAX or priority < INT_MIN:
+        raise oefmt(space.w_OverflowError, "sched_priority out of range")
+    try:
+        res = rposix.sched_setparam(pid, priority)
+    except OSError as e:
+        wrap_oserror(space, e, eintr_retry=True)
+    else:
+        return space.newint(res)

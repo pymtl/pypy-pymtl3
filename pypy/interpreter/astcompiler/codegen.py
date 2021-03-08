@@ -304,7 +304,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             return False
 
     def _maybe_setup_annotations(self):
-        # if the scope contained an annotated variable assignemt,
+        # if the scope contained an annotated variable assignment,
         # this will emit the requisite SETUP_ANNOTATIONS
         if self.scope.contains_annotated and not isinstance(self, AbstractFunctionCodeGenerator):
             return self.emit_op(ops.SETUP_ANNOTATIONS)
@@ -561,8 +561,8 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
                 otherwise = end
             if_.test.accept_jump_if(self, False, otherwise)
             self.visit_sequence(if_.body)
-            self.emit_jump(ops.JUMP_FORWARD, end)
             if if_.orelse:
+                self.emit_jump(ops.JUMP_FORWARD, end)
                 self.use_next_block(otherwise)
                 self.visit_sequence(if_.orelse)
         self.use_next_block(end)
@@ -622,16 +622,17 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.use_next_block(end)
 
     def visit_AsyncFor(self, fr):
+        if not self._check_async_function():
+            self.error("'async for' outside async function", fr)
         self.update_position(fr.lineno, True)
         b_try = self.new_block()
         b_except = self.new_block()
         b_end = self.new_block()
         b_after_try = self.new_block()
         b_try_cleanup = self.new_block()
-        b_after_loop = self.new_block()
         b_after_loop_else = self.new_block()
 
-        self.emit_jump(ops.SETUP_LOOP, b_after_loop)
+        self.emit_jump(ops.SETUP_LOOP, b_end)
         self.push_frame_block(F_BLOCK_LOOP, b_try)
 
         fr.iter.walkabout(self)
@@ -657,34 +658,22 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.emit_op(ops.DUP_TOP)
         self.emit_op_name(ops.LOAD_GLOBAL, self.names, "StopAsyncIteration")
         self.emit_op_arg(ops.COMPARE_OP, 10)
-        self.emit_jump(ops.POP_JUMP_IF_FALSE, b_try_cleanup, True)
-
-        self.emit_op(ops.POP_TOP)
-        self.emit_op(ops.POP_TOP)
-        self.emit_op(ops.POP_TOP)
-        self.emit_op(ops.POP_EXCEPT) # for SETUP_EXCEPT
-        # Manually remove the 'aiter' object from the valuestack.
-        # This POP_TOP is not needed from the point of view of
-        # pyopcode.py, which will pop anything to match the stack
-        # depth of the SETUP_LOOP, but it is needed to make
-        # PythonCodeMaker._stacksize() compute an exact result and not
-        # crash with StackDepthComputationError.
-        self.emit_op(ops.POP_TOP)
-        self.emit_op(ops.POP_BLOCK) # for SETUP_LOOP
-        self.emit_jump(ops.JUMP_ABSOLUTE, b_after_loop_else, True)
-
-        self.use_next_block(b_try_cleanup)
+        self.emit_jump(ops.POP_JUMP_IF_TRUE, b_try_cleanup, True)
         self.emit_op(ops.END_FINALLY)
 
         self.use_next_block(b_after_try)
         self.visit_sequence(fr.body)
         self.emit_jump(ops.JUMP_ABSOLUTE, b_try, True)
 
+        self.use_next_block(b_try_cleanup)
+        self.emit_op(ops.POP_TOP)
+        self.emit_op(ops.POP_TOP)
+        self.emit_op(ops.POP_TOP)
+        self.emit_op(ops.POP_EXCEPT) # for SETUP_EXCEPT
+        self.emit_op(ops.POP_TOP)
+
         self.emit_op(ops.POP_BLOCK) # for SETUP_LOOP
         self.pop_frame_block(F_BLOCK_LOOP, b_try)
-
-        self.use_next_block(b_after_loop)
-        self.emit_jump(ops.JUMP_ABSOLUTE, b_end, True)
 
         self.use_next_block(b_after_loop_else)
         self.visit_sequence(fr.orelse)
@@ -1067,6 +1056,8 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.pop_frame_block(F_BLOCK_FINALLY_END, cleanup)
 
     def visit_AsyncWith(self, wih):
+        if not self._check_async_function():
+            self.error("'async with' outside async function", wih)
         self.update_position(wih.lineno, True)
         self.handle_withitem(wih, 0, is_async=True)
 
@@ -1411,99 +1402,20 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             self.load_const(self.space.newtext(keyword.arg))
         keyword.value.walkabout(self)
 
-    def _make_call(self, n, # args already pushed
-                   args, keywords):
-        call_type = 0
-        # the number of tuples and dictionaries on the stack
-        nsubargs = 0
-        nsubkwargs = 0
-        nkw = 0
-        nseen = 0 # the number of positional arguments on the stack
-        if args is not None:
-            for elt in args:
-                if isinstance(elt, ast.Starred):
-                    # A star-arg. If we've seen positional arguments,
-                    # pack the positional arguments into a tuple.
-                    if nseen:
-                        self.emit_op_arg(ops.BUILD_TUPLE, nseen)
-                        nseen = 0
-                        nsubargs += 1
-                    elt.value.walkabout(self)
-                    nsubargs += 1
-                elif nsubargs:
-                    # We've seen star-args already, so we
-                    # count towards items-to-pack-into-tuple.
-                    elt.walkabout(self)
-                    nseen += 1
-                else:
-                    # Positional arguments before star-arguments
-                    # are left on the stack.
-                    elt.walkabout(self)
-                    n += 1
-            if nseen:
-                # Pack up any trailing positional arguments.
-                self.emit_op_arg(ops.BUILD_TUPLE, nseen)
-                nsubargs += 1
-            if nsubargs:
-                call_type |= 1
-                if nsubargs > 1:
-                    # If we ended up with more than one stararg, we need
-                    # to concatenate them into a single sequence.
-                    self.emit_op_arg(ops.BUILD_LIST_UNPACK, nsubargs)
+    def _load_constant_tuple(self, content_w):
+        self.load_const(self.space.newtuple(content_w[:]))
 
-        # Repeat procedure for keyword args
-        nseen = 0 # the number of keyword arguments on the stack following
-        if keywords is not None:
-            for kw in keywords:
-                assert isinstance(kw, ast.keyword)
-                if kw.arg is None:
-                    # A keyword argument unpacking.
-                    if nseen:
-                        self.emit_op_arg(ops.BUILD_MAP, nseen)
-                        nseen = 0
-                        nsubkwargs += 1
-                    kw.value.walkabout(self)
-                    nsubkwargs += 1
-                elif nsubkwargs:
-                    # A keyword argument and we already have a dict.
-                    self.load_const(self.space.newtext(kw.arg))
-                    kw.value.walkabout(self)
-                    nseen += 1
-                else:
-                    # keyword argument
-                    kw.walkabout(self)
-                    nkw += 1
-            if nseen:
-                # Pack up any trailing keyword arguments.
-                self.emit_op_arg(ops.BUILD_MAP,nseen)
-                nsubkwargs += 1
-            if nsubkwargs:
-                call_type |= 2
-                if nsubkwargs > 1:
-                    # Pack it all up
-                    function_pos = n + (call_type & 1) + nkw + 1
-                    self.emit_op_arg(ops.BUILD_MAP_UNPACK_WITH_CALL, (nsubkwargs | (function_pos << 8)))
-
-        assert n < 1<<8
-        assert nkw < 1<<24
-        n |= nkw << 8;
-
-        op = 0
-        if call_type == 0:
-            op = ops.CALL_FUNCTION
-        elif call_type == 1:
-            op = ops.CALL_FUNCTION_VAR
-        elif call_type == 2:
-            op = ops.CALL_FUNCTION_KW
-        elif call_type == 3:
-            op = ops.CALL_FUNCTION_VAR_KW
-        self.emit_op_arg(op, n)
+    def _make_call(self, nargs_pushed, args, keywords):
+        space = self.space
+        CallCodeGenerator(self, nargs_pushed, args, keywords).emit_call()
 
     def visit_Call(self, call):
         self.update_position(call.lineno)
         if self._optimize_method_call(call):
             return
         call.func.walkabout(self)
+        #if getattr(call.func, "id", None) == "f":
+        #    import pdb; pdb.set_trace()
         self._make_call(0, call.args, call.keywords)
 
     def _call_has_no_star_args(self, call):
@@ -1522,6 +1434,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         return self._call_has_no_star_args(call) and not call.keywords
 
     def _optimize_method_call(self, call):
+        space = self.space
         if not self._call_has_no_star_args(call) or \
            not isinstance(call.func, ast.Attribute):
             return False
@@ -1531,9 +1444,18 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.emit_op_name(ops.LOOKUP_METHOD, self.names, attr_lookup.attr)
         self.visit_sequence(call.args)
         arg_count = len(call.args) if call.args is not None else 0
-        self.visit_sequence(call.keywords)
-        kwarg_count = len(call.keywords) if call.keywords is not None else 0
-        self.emit_op_arg(ops.CALL_METHOD, (kwarg_count << 8) | arg_count)
+        if not call.keywords:
+            self.emit_op_arg(ops.CALL_METHOD, arg_count)
+        else:
+            keyword_names_w = []
+            for kw in call.keywords:
+                assert isinstance(kw, ast.keyword)
+                assert kw.arg  # checked by self._call_has_no_star_args
+                w_name = space.newtext(kw.arg)
+                keyword_names_w.append(misc.intern_if_common_string(space, w_name))
+                kw.value.walkabout(self)
+            self._load_constant_tuple(keyword_names_w)
+            self.emit_op_arg(ops.CALL_METHOD_KW, len(keyword_names_w) + arg_count)
         return True
 
     def visit_ListComp(self, lc):
@@ -1579,9 +1501,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         b_after_try = self.new_block()
         b_try_cleanup = self.new_block()
         b_except = self.new_block()
-        b_skip = self.new_block()
         b_if_cleanup = self.new_block()
-        b_anchor = self.new_block()
         gen = generators[gen_index]
         assert isinstance(gen, ast.comprehension)
         if gen_index > 0:
@@ -1605,15 +1525,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.emit_op(ops.DUP_TOP)
         self.emit_op_name(ops.LOAD_GLOBAL, self.names, "StopAsyncIteration")
         self.emit_op_arg(ops.COMPARE_OP, 10)
-        self.emit_jump(ops.POP_JUMP_IF_FALSE, b_try_cleanup, True)
-
-        self.emit_op(ops.POP_TOP)
-        self.emit_op(ops.POP_TOP)
-        self.emit_op(ops.POP_TOP)
-        self.emit_op(ops.POP_EXCEPT) # for SETUP_EXCEPT
-        self.emit_jump(ops.JUMP_ABSOLUTE, b_anchor, True)
-
-        self.use_next_block(b_try_cleanup)
+        self.emit_jump(ops.POP_JUMP_IF_TRUE, b_try_cleanup, True)
         self.emit_op(ops.END_FINALLY)
 
         self.use_next_block(b_after_try)
@@ -1630,17 +1542,21 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             node.accept_comp_iteration(self, gen_index)
         self.use_next_block(b_if_cleanup)
         self.emit_jump(ops.JUMP_ABSOLUTE, b_try, True)
-        self.use_next_block(b_anchor)
+        self.use_next_block(b_try_cleanup)
+        self.emit_op(ops.POP_TOP)
+        self.emit_op(ops.POP_TOP)
+        self.emit_op(ops.POP_TOP)
+        self.emit_op(ops.POP_EXCEPT) # for SETUP_EXCEPT
         self.emit_op(ops.POP_TOP)
 
     def _compile_comprehension(self, node, name, sub_scope):
         is_async_function = self.scope.is_coroutine
         code, qualname = self.sub_scope(sub_scope, name, node, node.lineno)
-        is_async_generator = self.symbols.find_scope(node).is_coroutine
-
-        if is_async_generator and not is_async_function:
-            self.error("asynchronous comprehension outside of "
-                       "an asynchronous function", node)
+        is_async_comprehension = self.symbols.find_scope(node).is_coroutine
+        if is_async_comprehension and not is_async_function:
+            if not isinstance(node, ast.GeneratorExp):
+                self.error("asynchronous comprehension outside of "
+                           "an asynchronous function", node)
 
         self.update_position(node.lineno)
         self._make_function(code, qualname=qualname)
@@ -1654,7 +1570,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         else:
             self.emit_op(ops.GET_ITER)
         self.emit_op_arg(ops.CALL_FUNCTION, 1)
-        if is_async_generator and sub_scope is not GenExpCodeGenerator:
+        if is_async_comprehension and sub_scope is not GenExpCodeGenerator:
             self.emit_op(ops.GET_AWAITABLE)
             self.load_const(self.space.w_None)
             self.emit_op(ops.YIELD_FROM)
@@ -1943,3 +1859,127 @@ class ClassCodeGenerator(PythonCodeGenerator):
         if self.scope.doc_removable:
             flags |= consts.CO_KILL_DOCSTRING
         return PythonCodeGenerator._get_code_flags(self) | flags
+
+
+class CallCodeGenerator(object):
+    def __init__(self, codegenerator, nargs_pushed, args, keywords):
+        self.space = codegenerator.space
+        self.codegenerator = codegenerator
+        self.nargs_pushed = nargs_pushed
+        self.args = args
+        self.keywords = keywords
+
+        # the number of tuples and dictionaries on the stack
+        self.nsubargs = 0
+        self.nsubkwargs = 0
+        self.keyword_names_w = []
+
+    def _pack_positional_into_tuple(self):
+        if self.nargs_pushed:
+            self.codegenerator.emit_op_arg(ops.BUILD_TUPLE, self.nargs_pushed)
+            self.nsubargs += 1
+            self.nargs_pushed = 0
+
+    def _push_args(self):
+        for elt in self.args:
+            if isinstance(elt, ast.Starred):
+                # we have a *arg
+                self._pack_positional_into_tuple()
+                elt.value.walkabout(self.codegenerator)
+                self.nsubargs += 1
+                continue
+            if self.nargs_pushed >= MAX_STACKDEPTH_CONTAINERS // 2:
+                # stack depth getting too big
+                self._pack_positional_into_tuple()
+            elt.walkabout(self.codegenerator)
+            self.nargs_pushed += 1
+        if self.nsubargs:
+            # Pack up any trailing positional arguments.
+            self._pack_positional_into_tuple()
+            if self.nsubargs > 1:
+                # If we ended up with more than one stararg, we need
+                # to concatenate them into a single sequence.
+                # XXX CPython uses BUILD_TUPLE_UNPACK_WITH_CALL, but I
+                # don't quite see the difference?
+                self.codegenerator.emit_op_arg(ops.BUILD_TUPLE_UNPACK, self.nsubargs)
+
+    def _pack_kwargs_into_dict(self):
+        if self.keyword_names_w:
+            self.codegenerator._load_constant_tuple(self.keyword_names_w)
+            # XXX use BUILD_MAP for size 1?
+            self.codegenerator.emit_op_arg(ops.BUILD_CONST_KEY_MAP, len(self.keyword_names_w))
+            self.keyword_names_w = []
+            self.nsubkwargs += 1
+
+    def _push_kwargs(self):
+        for kw in self.keywords:
+            assert isinstance(kw, ast.keyword)
+            if kw.arg is None:
+                # if we see **args or if the number of keywords is huge,
+                # pack up keywords on the stack so far
+                self._pack_kwargs_into_dict()
+                kw.value.walkabout(self.codegenerator)
+                self.nsubkwargs += 1
+                continue
+            if len(self.keyword_names_w) > MAX_STACKDEPTH_CONTAINERS // 2:
+                self._pack_kwargs_into_dict()
+            w_name = self.space.newtext(kw.arg)
+            self.keyword_names_w.append(misc.intern_if_common_string(self.space, w_name))
+            kw.value.walkabout(self.codegenerator)
+        if self.nsubkwargs:
+            self._pack_kwargs_into_dict()
+            if self.nsubkwargs > 1:
+                # Pack it all up
+                self.codegenerator.emit_op_arg(ops.BUILD_MAP_UNPACK_WITH_CALL, self.nsubkwargs)
+
+    def _pack_positional_args_into_tuple(self):
+        if self.nargs_pushed == 0:
+            self.codegenerator._load_constant_tuple([])
+        else:
+            self.codegenerator.emit_op_arg(ops.BUILD_TUPLE, self.nargs_pushed)
+        self.nsubargs += 1
+
+    def _push_tuple_positional_args_if_necessary(self):
+        if self.nsubargs:
+            # can't use CALL_FUNCTION_KW anyway, because we already have a
+            # tuple as the positional args
+            return
+        # we might get away with using CALL_FUNCTION_KW if there are no **kwargs
+        for kw in self.keywords:
+            assert isinstance(kw, ast.keyword)
+            if kw.arg is None:
+                # we found a **kwarg, thus we're using CALL_FUNCTION_EX, we
+                # need to pack up positional arguments first
+                self._pack_positional_args_into_tuple()
+                break
+        if self.nsubargs == 0 and len(self.keywords) > MAX_STACKDEPTH_CONTAINERS // 2:
+            # we have a huge amount of keyword args, thus we also need to use
+            # CALL_FUNCTION_EX
+            self._pack_positional_args_into_tuple()
+
+    def emit_call(self):
+        keywords = self.keywords
+        codegenerator = self.codegenerator
+        space = self.space
+        if self.args is not None:
+            self._push_args()
+
+        # Repeat procedure for keyword args
+        if keywords is None or len(keywords) == 0:
+            if not self.nsubargs:
+                # no *args, no keyword args, no **kwargs
+                codegenerator.emit_op_arg(ops.CALL_FUNCTION, self.nargs_pushed)
+                return
+        else:
+            self._push_tuple_positional_args_if_necessary()
+            self._push_kwargs()
+
+        if self.nsubkwargs == 0 and self.nsubargs == 0:
+            # can use CALL_FUNCTION_KW
+            assert len(self.keyword_names_w) > 0 # otherwise we would have used CALL_FUNCTION
+            codegenerator._load_constant_tuple(self.keyword_names_w)
+            codegenerator.emit_op_arg(ops.CALL_FUNCTION_KW, self.nargs_pushed + len(self.keyword_names_w))
+        else:
+            self._pack_kwargs_into_dict()
+            codegenerator.emit_op_arg(ops.CALL_FUNCTION_EX, int(self.nsubkwargs > 0))
+
