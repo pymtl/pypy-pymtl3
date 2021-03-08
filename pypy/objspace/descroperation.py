@@ -154,6 +154,8 @@ class DescrOperation(object):
     def get_and_call_function(space, w_descr, w_obj, *args_w):
         typ = type(w_descr)
         # a special case for performance and to avoid infinite recursion
+        # (possibly; but note issue3255 in the get() metehod, which might
+        # also remove the infinite recursion here)
         if typ is Function or typ is FunctionWithFixedCode:
             # isinstance(typ, Function) would not be correct here:
             # for a BuiltinFunction we must not use that shortcut, because a
@@ -187,7 +189,9 @@ class DescrOperation(object):
             return w_descr
         if w_type is None:
             w_type = space.type(w_obj)
-        return space.get_and_call_function(w_get, w_descr, w_obj, w_type)
+        # special case: don't use get_and_call_function() here.
+        # see test_issue3255 in apptest_descriptor.py
+        return space.call_function(w_get, w_descr, w_obj, w_type)
 
     def set(space, w_descr, w_obj, w_val):
         w_set = space.lookup(w_descr, '__set__')
@@ -273,9 +277,12 @@ class DescrOperation(object):
 
     def _check_len_result(space, w_obj):
         # Will complain if result is too big.
-        result = space.getindex_w(w_obj, space.w_OverflowError)
-        if result < 0:
+        w_result = space.index(w_obj)
+        assert space.isinstance_w(w_result, space.w_int)
+        if space.is_true(space.lt(w_result, space.newint(0))):
             raise oefmt(space.w_ValueError, "__len__() should return >= 0")
+        result = space.getindex_w(w_result, space.w_OverflowError)
+        assert result >= 0
         return result
 
     def is_iterable(space, w_obj):
@@ -311,6 +318,8 @@ class DescrOperation(object):
 
     def getitem(space, w_obj, w_key):
         w_descr = space.lookup(w_obj, '__getitem__')
+        if w_descr is None and space.isinstance_w(w_obj, space.w_type):
+            w_descr = space.getattr(w_obj, space.newtext('__class_getitem__'))
         if w_descr is None:
             raise oefmt(space.w_TypeError,
                         "'%T' object is not subscriptable (key %R)",
@@ -600,6 +609,8 @@ def _make_comparison_impl(symbol, specialnames):
     left, right = specialnames
     op = getattr(operator, left)
     def comparison_impl(space, w_obj1, w_obj2):
+        w_orig_obj1 = w_obj1
+        w_orig_obj2 = w_obj2
         w_typ1 = space.type(w_obj1)
         w_typ2 = space.type(w_obj2)
         w_left_src, w_left_impl = space.lookup_in_type_where(w_typ1, left)
@@ -639,7 +650,7 @@ def _make_comparison_impl(symbol, specialnames):
         # if we arrived here, they are unorderable
         raise oefmt(space.w_TypeError,
                     "'%s' not supported between instances of '%T' and '%T'",
-                    symbol, w_obj1, w_obj2)
+                    symbol, w_orig_obj1, w_orig_obj2)
 
     return func_with_new_name(comparison_impl, 'comparison_%s_impl'%left.strip('_'))
 

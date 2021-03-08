@@ -93,6 +93,7 @@ class AppTestSrePattern:
         assert ["a", "u"] == re.findall("b(.)", "abalbus")
         assert [("a", "l"), ("u", "s")] == re.findall("b(.)(.)", "abalbus")
         assert [("a", ""), ("s", "s")] == re.findall("b(a|(s))", "babs")
+        assert ['', '', '', ''] == re.findall("X??", "1X4")   # changes in 3.7
 
     def test_findall_unicode(self):
         import re
@@ -341,12 +342,15 @@ class AppTestSreMatch:
         import re
         assert re.sub('=\w{2}', 'x', '=CA') == 'x'
 
+    def test_sub_emptymatch(self):
+        import re
+        assert re.sub(r"b*", "*", "abc") == "*a*c*"   # changes in 3.7
+
     def test_sub_bytearray(self):
         import re
         assert re.sub(b'a', bytearray(b'A'), b'axa') == b'AxA'
         # this fails on CPython 3.5:
         assert re.sub(b'a', bytearray(b'\\n'), b'axa') == b'\nx\n'
-
     def test_match_array(self):
         import re, array
         a = array.array('b', b'hello')
@@ -438,9 +442,8 @@ class AppTestSreScanner:
         assert "a" == p.match().group(0)
         assert "a" == p.match().group(0)
         assert None == p.match()
-        assert "a" == p.match().group(0)
-        assert "a" == p.match().group(0)
-        assert None == p.match()
+        # the rest has been changed somewhere between Python 2.6.9
+        # and Python 2.7.18.  PyPy now follows the 2.7.18 behavior
         assert None == p.match()
         assert None == p.match()
 
@@ -457,6 +460,13 @@ class AppTestSreScanner:
             skip("2.3 is different here")
         p = re.compile(".*").scanner("bla")
         assert ("bla", "") == (p.search().group(0), p.search().group(0))
+        assert None == p.search()
+
+    def test_scanner_empty_match(self):
+        import re, sys
+        p = re.compile("a??").scanner("bac")
+        assert ("", "", "", "") == (p.search().group(0), p.search().group(0),
+                                    p.search().group(0), p.search().group(0))
         assert None == p.search()
 
     def test_no_pattern(self):
@@ -1112,13 +1122,44 @@ class AppTestOptimizations:
         raises(ValueError, re.split, '', '')
         re.split("a*", '')    # -> warning
 
+    def test_type_names(self):
+        import re
+        assert repr(re.Pattern) == "<class 're.Pattern'>"
+        assert repr(re.Match) == "<class 're.Match'>"
+
 class AppTestUnicodeExtra:
     def test_string_attribute(self):
         import re
         match = re.search(u"\u1234", u"\u1233\u1234\u1235")
         assert match.string == u"\u1233\u1234\u1235"
+        # check ascii version too
+        match = re.search(u"a", u"bac")
+        assert match.string == u"bac"
 
     def test_match_start(self):
         import re
         match = re.search(u"\u1234", u"\u1233\u1234\u1235")
         assert match.start() == 1
+
+    def test_match_repr_span(self):
+        import re
+        match = re.match(u"\u1234", u"\u1234")
+        assert match.span() == (0, 1)
+        assert "span=(0, 1), match='\u1234'" in repr(match)
+
+    def test_match_repr_truncation(self):
+        import re
+        s = "xy" + u"\u1234" * 50
+        match = re.match(s, s)
+        # this used to produce invalid utf-8 by truncating repr(s)
+        # after 50 bytes
+        assert "span=(0, 52), match=" + repr(s)[:50] + ">" in repr(match)
+
+    def test_pattern_repr_truncation(self):
+        import re
+        s = "xy" + u"\u1234" * 200
+        pattern = re.compile(s)
+        # this used to produce invalid utf-8 by truncating repr(s)
+        # after 200 bytes
+        assert repr(pattern) == "re.compile(%s)" % (repr(s)[:200],)
+

@@ -132,11 +132,11 @@ udir.join('pypy_macros.h').write("/* Will be filled later */\n")
 
 constant_names = """
 Py_TPFLAGS_READY Py_TPFLAGS_READYING
-METH_COEXIST METH_STATIC METH_CLASS Py_TPFLAGS_BASETYPE Py_MAX_FMT
+METH_COEXIST METH_STATIC METH_CLASS Py_TPFLAGS_BASETYPE
 METH_NOARGS METH_VARARGS METH_KEYWORDS METH_O
 Py_TPFLAGS_HEAPTYPE
 Py_LT Py_LE Py_EQ Py_NE Py_GT Py_GE Py_MAX_NDIMS
-Py_CLEANUP_SUPPORTED
+Py_CLEANUP_SUPPORTED PyBUF_READ
 PyBUF_FORMAT PyBUF_ND PyBUF_STRIDES PyBUF_WRITABLE PyBUF_SIMPLE PyBUF_WRITE
 """.split()
 
@@ -622,6 +622,7 @@ SYMBOLS_C = [
 
     'PyStructSequence_InitType', 'PyStructSequence_InitType2',
     'PyStructSequence_New', 'PyStructSequence_UnnamedField',
+    'PyStructSequence_NewType',
 
     'PyFunction_Type', 'PyMethod_Type', 'PyRange_Type', 'PyTraceBack_Type',
 
@@ -637,7 +638,7 @@ SYMBOLS_C = [
     'PyMem_RawMalloc', 'PyMem_RawCalloc', 'PyMem_RawRealloc', 'PyMem_RawFree',
     'PyMem_Malloc', 'PyMem_Calloc', 'PyMem_Realloc', 'PyMem_Free',
     'PyObject_CallFinalizerFromDealloc',
-    '_PyTraceMalloc_Track', '_PyTraceMalloc_Untrack',
+    'PyTraceMalloc_Track', 'PyTraceMalloc_Untrack',
     'PyBytes_FromFormat', 'PyBytes_FromFormatV',
 
     'PyType_FromSpec',
@@ -674,7 +675,6 @@ def build_exported_objects():
     # PyExc_AttributeError, PyExc_OverflowError, PyExc_ImportError,
     # PyExc_NameError, PyExc_MemoryError, PyExc_RuntimeError,
     # PyExc_UnicodeEncodeError, PyExc_UnicodeDecodeError, ...
-    global all_exceptions
     from pypy.module.exceptions.moduledef import Module as ExcModule
     all_exceptions = list(ExcModule.interpleveldefs)
     for exc_name in all_exceptions:
@@ -1165,7 +1165,8 @@ def attach_c_functions(space, eci, prefix):
                    rffi.VOIDP, '_pypy_rawrefcount_w_marker_deallocating',
                    eci, _nowrapper=True, c_type='void *')
     state.C._PyPy_subtype_dealloc = rffi.llexternal(
-        '_PyPy_subtype_dealloc', [PyObject], lltype.Void,
+        mangle_name(prefix, '_Py_subtype_dealloc'),
+        [PyObject], lltype.Void,
         compilation_info=eci, _nowrapper=True)
     state.C._PyPy_object_dealloc = rffi.llexternal(
         '_PyPy_object_dealloc', [PyObject], lltype.Void,
@@ -1221,11 +1222,6 @@ def build_bridge(space):
     struct PyPyAPI* pypyAPI = &_pypyAPI;
     """ % dict(members=structmembers)
 
-    global_objects = []
-    for name in all_exceptions:
-        global_objects.append('PyTypeObject _PyExc_%s;' % name)
-    global_code = '\n'.join(global_objects)
-
     prologue = ("#include <Python.h>\n" +
                 "#include <structmember.h>\n" +
                 "#include <marshal.h>\n" +
@@ -1233,7 +1229,6 @@ def build_bridge(space):
                 "#include <src/thread.c>\n")
     code = (prologue +
             struct_declaration_code +
-            global_code +
             '\n' +
             '\n'.join(functions))
 
@@ -1499,6 +1494,11 @@ separate_module_files = [source_dir / "varargwrapper.c",
                          source_dir / "tupleobject.c",
                          source_dir / "sliceobject.c",
                          ]
+if WIN32:
+    separate_module_files.append(source_dir / "pythread_nt.c")
+else:
+    separate_module_files.append(source_dir / "pythread_posix.c")
+
 
 def build_eci(code, use_micronumpy=False, translating=False):
     "NOT_RPYTHON"
@@ -1519,6 +1519,8 @@ def build_eci(code, use_micronumpy=False, translating=False):
         elif sys.platform.startswith('linux'):
             compile_extra.append("-Werror=implicit-function-declaration")
             compile_extra.append('-g')
+        compile_extra.append(
+                    '-DCPYEXT_TESTS')
 
     # Generate definitions for global structures
     structs = ["#include <Python.h>"]
@@ -1574,7 +1576,6 @@ def setup_micronumpy(space):
         return use_micronumpy
     # import registers api functions by side-effect, we also need HEADER
     from pypy.module.cpyext.ndarrayobject import HEADER
-    global separate_module_files
     register_global("PyArray_Type",
         'PyTypeObject*',  "space.gettypeobject(W_NDimArray.typedef)",
         header=HEADER)
@@ -1844,7 +1845,10 @@ def make_generic_cpy_call(FT, expect_null, convert_result):
             boxed_args += (arg,)
             to_decref += (_pyobj,)
 
-        preexist_error = PyErr_Occurred(space)
+        if is_PyObject(RESULT_TYPE):
+            preexist_error = PyErr_Occurred(space)
+        else:
+            preexist_error = "this is not used"
         try:
             # Call the function
             result = call_external_function(func, *boxed_args)

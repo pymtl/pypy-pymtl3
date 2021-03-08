@@ -1,4 +1,5 @@
 repo: 45eff22199974f85fd96138d25510f4660aba5a1
-node: 1608da62bfc71e8ac775121dd0b21bb72e61c6ea
-branch: release-pypy3.6-v7.x
-tag: release-pypy3.6-v7.3.0rc4
+node: 7e6e2bb30ac5fbdbd443619cae28c51d5c162a02
+branch: release-pypy3.7-v7.x
+tag: release-pypy3.7-v7.3.3
+tag: release-pypy3.7-v7.3.3rc2

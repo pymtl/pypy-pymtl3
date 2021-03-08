@@ -5,7 +5,7 @@ if hasattr(sys, 'setrecursionlimit'):
     # some tests fail otherwise
     sys.setrecursionlimit(2000)
 
-LOOK_FOR_PYTHON3 = 'python3.6'
+LOOK_FOR_PYTHON3 = 'python3.7'
 PYTHON3 = os.getenv('PYTHON3') or py.path.local.sysfind(LOOK_FOR_PYTHON3)
 if PYTHON3 is not None:
     PYTHON3 = str(PYTHON3)
@@ -84,7 +84,7 @@ def pytest_addoption(parser):
            help="python interpreter to run appdirect tests with")
     group.addoption('-D', '--direct-apptest', action="store_true",
            default=False, dest="direct_apptest",
-           help="run applevel_XXX.py tests directly on host interpreter")
+           help="run '%s' tests directly on host interpreter" % APPLEVEL_FN)
     group.addoption('--direct', action="store_true",
            default=False, dest="rundirect",
            help="run pexpect tests directly")

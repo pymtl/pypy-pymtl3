@@ -684,6 +684,7 @@ class AppTestImport(BaseFSEncodeTest):
                                      ) == 'a/b/c.py'
         raises(ValueError, imp.source_from_cache, 'a/b/c.py')
 
+    @pytest.mark.skip("sys.version_info > (3, 6)")
     def test_invalid_pathname(self):
         import imp
         import pkg
@@ -864,7 +865,6 @@ class TestPycStuff:
                                                    w_mod,
                                                    cpathname,
                                                    magic,
-                                                   timestamp,
                                                    stream.readall())
         finally:
             stream.close()
@@ -889,7 +889,6 @@ class TestPycStuff:
                                                    w_mod,
                                                    None,
                                                    magic,
-                                                   timestamp,
                                                    stream.readall())
         finally:
             stream.close()
@@ -969,7 +968,6 @@ class TestPycStuff:
                                     w_mod,
                                     cpathname,
                                     magic,
-                                    timestamp,
                                     stream.readall())
                 finally:
                     stream.close()

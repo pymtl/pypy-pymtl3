@@ -98,3 +98,16 @@ def f():
         from __pypy__ import utf8content
         assert utf8content(u"a") == b"a"
         assert utf8content(u"\xe4") == b'\xc3\xa4'
+
+    def test_get_set_contextvar_context(self):
+        from __pypy__ import get_contextvar_context, set_contextvar_context
+        context = get_contextvar_context()
+        try:
+            set_contextvar_context(1)
+            assert get_contextvar_context() == 1
+            set_contextvar_context(5)
+            assert get_contextvar_context() == 5
+
+        finally:
+            set_contextvar_context(context)
+

@@ -781,8 +781,9 @@ class CCompiler:
             for incl in includes:
                 f.write("""#include "%s"\n""" % incl)
             f.write("""\
-main (int argc, char **argv) {
+int main (int argc, char **argv) {
     %s();
+    return 0;
 }
 """ % funcname)
         finally:
@@ -959,9 +960,7 @@ def get_default_compiler(osname=None, platform=None):
 # is assumed to be in the 'distutils' package.)
 compiler_class = { 'unix':    ('unixccompiler', 'UnixCCompiler',
                                "standard UNIX-style compiler"),
-                   # PyPy change: On win32 PyPy is translated with the
-                   # "msvc9compiler", force the same here.
-                   'msvc':    ('msvc9compiler', 'MSVCCompiler',
+                   'msvc':    ('_msvccompiler', 'MSVCCompiler',
                                "Microsoft Visual C++"),
                    'cygwin':  ('cygwinccompiler', 'CygwinCCompiler',
                                "Cygwin port of GNU C Compiler for Win32"),

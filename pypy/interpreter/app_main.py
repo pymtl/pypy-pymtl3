@@ -32,12 +32,15 @@ Options and arguments (and corresponding environment variables):
 -W arg : warning control; arg is action:message:category:module:lineno
          also PYTHONWARNINGS=arg
 -X opt : set implementation-specific option
+--check-hash-based-pycs always|default|never:
+    control how Python invalidates hash-based .pyc files
 file   : program read from script file
 -      : program read from stdin (default; interactive mode if a tty)
 arg ...: arguments passed to program in sys.argv[1:]
 PyPy options and arguments:
 --info : print translation information about this PyPy executable
 -X faulthandler: attempt to display tracebacks when PyPy crashes
+-X dev: enable PyPy's "development mode"
 """
 # Missing vs CPython: PYTHONHOME
 USAGE2 = """
@@ -47,6 +50,8 @@ PYTHONPATH   : %r-separated list of directories prefixed to the
                default module search path.  The result is sys.path.
 PYTHONCASEOK : ignore case in 'import' statements (Windows).
 PYTHONIOENCODING: Encoding[:errors] used for stdin/stdout/stderr.
+PYTHONFAULTHANDLER: dump the Python traceback on fatal errors.
+PYTHONDEVMODE: enable the development mode.
 PYPY_IRC_TOPIC: if set to a non-empty value, print a random #pypy IRC
                topic at startup of interactive mode.
 PYPYLOG: If set to a non-empty value, enable logging.
@@ -86,6 +91,19 @@ def handle_sys_exit(e):
                 pass   # too bad
             exitcode = 1
     raise SystemExit(exitcode)
+
+WE_ARE_TRANSLATED = True   # patch to False if we're not really translated
+IS_WINDOWS = 'nt' in sys.builtin_module_names
+def get_getenv():
+    try:
+        # we need a version of getenv before we import os
+        from __pypy__.os import real_getenv
+    except ImportError:
+        # dont fail on CPython tests here
+        import os
+        real_getenv = os.getenv
+    return real_getenv
+
 
 @hidden_applevel
 def run_toplevel(f, *fargs, **fkwds):
@@ -192,14 +210,17 @@ def get_sys_executable():
     return getattr(sys, 'executable', 'pypy3')
 
 def print_help(*args):
-    import os
+    if IS_WINDOWS:
+        pathsep = ';' 
+    else:
+        pathsep = ':'
     initstdio()
     print('usage: %s [option] ... [-c cmd | -m mod | file | -] [arg] ...' % (
         get_sys_executable(),))
     print(USAGE1, end='')
     if 'pypyjit' in sys.builtin_module_names:
         print("--jit options: advanced JIT options: try 'off' or 'help'")
-    print(USAGE2 % (os.pathsep,), end='')
+    print(USAGE2 % (pathsep,), end='')
     raise SystemExit
 
 def _print_jit_help():
@@ -272,21 +293,19 @@ def fdopen(fd, mode, bufsize=-1):
 # ____________________________________________________________
 # Main entry point
 
-def we_are_translated():
-    # app-level, very different from rpython.rlib.objectmodel.we_are_translated
-    return hasattr(sys, 'pypy_translation_info')
-
-IS_WINDOWS = 'nt' in sys.builtin_module_names
-
 def setup_and_fix_paths(ignore_environment=False, **extra):
-    import os
+    if IS_WINDOWS:
+        pathsep = ';' 
+    else:
+        pathsep = ':'
+    getenv = get_getenv()
     newpath = sys.path[:]
     del sys.path[:]
     # first prepend PYTHONPATH
     readenv = not ignore_environment
-    path = readenv and os.getenv('PYTHONPATH')
+    path = readenv and getenv('PYTHONPATH')
     if path:
-        sys.path.extend(path.split(os.pathsep))
+        sys.path.extend(path.split(pathsep))
     # then add again the original entries, ignoring duplicates
     _seen = set()
     for dir in newpath:
@@ -297,6 +316,11 @@ def setup_and_fix_paths(ignore_environment=False, **extra):
 def initstdio(encoding=None, unbuffered=False):
     if hasattr(sys, 'stdin'):
         return # already initialized
+    if IS_WINDOWS:
+        pathsep = ';' 
+    else:
+        pathsep = ':'
+    getenv = get_getenv()
 
     if StdErrPrinter is not None:
         sys.stderr = sys.__stderr__ = StdErrPrinter(2)
@@ -386,6 +410,8 @@ sys_flags = (
     "quiet",
     "hash_randomization",
     "isolated",
+    "dev_mode",
+    "utf8_mode",
 )
 # ^^^ Order is significant!  Keep in sync with module.sys.app.sysflags
 
@@ -396,6 +422,8 @@ default_options = dict.fromkeys(
     "run_stdin",
     "warnoptions",
     "unbuffered"), 0)
+default_options["check_hash_based_pycs"] = "default"
+default_options["dev_mode"] = False # needs to be bool
 
 def simple_option(options, name, iterargv):
     options[name] += 1
@@ -415,6 +443,8 @@ def m_option(options, runmodule, iterargv):
 
 def X_option(options, xoption, iterargv):
     options["_xoptions"].append(xoption)
+    if xoption == "dev":
+        options["dev_mode"] = True
 
 def W_option(options, warnoption, iterargv):
     options["warnoptions"].append(warnoption)
@@ -424,6 +454,16 @@ def end_options(options, _, iterargv):
 
 def ignore_option(*args):
     pass
+
+def check_hash_based_pycs(options, value, iterargv):
+    if value not in ("default", "always", "never"):
+        initstdio()
+        print_error("--check-hash-based-pycs must be one of 'default', 'always', or 'never'")
+        raise SystemExit
+    import _imp
+    _imp.check_hash_based_pycs = value
+    options["check_hash_based_pycs"] = value
+
 
 cmdline_options = {
     # simple options just increment the counter of the options listed above
@@ -452,6 +492,7 @@ cmdline_options = {
     '--info':    (print_info,      None),
     '--jit':     (set_jit_option,  Ellipsis),
     '-funroll-loops': (funroll_loops, None),
+    '--check-hash-based-pycs': (check_hash_based_pycs, Ellipsis),
     '--':        (end_options,     None),
     'R':         (ignore_option,   None),      # previously hash_randomization
     }
@@ -477,8 +518,8 @@ def handle_argument(c, options, iterargv, iterarg=iter(())):
 def parse_env(name, key, options):
     ''' Modify options inplace if name exists in os.environ
     '''
-    import os
-    v = os.getenv(name)
+    getenv = get_getenv()
+    v = getenv(name)
     if v:
         options[key] = max(1, options[key])
         try:
@@ -490,7 +531,7 @@ def parse_env(name, key, options):
             options[key] = max(options[key], newval)
 
 def parse_command_line(argv):
-    import os
+    getenv = get_getenv()
     options = default_options.copy()
     options['warnoptions'] = []
     options['_xoptions'] = []
@@ -532,19 +573,21 @@ def parse_command_line(argv):
 
     if not options["ignore_environment"]:
         parse_env('PYTHONDEBUG', "debug", options)
-        if os.getenv('PYTHONDONTWRITEBYTECODE'):
+        if getenv('PYTHONDONTWRITEBYTECODE'):
             options["dont_write_bytecode"] = 1
-        if os.getenv('PYTHONNOUSERSITE'):
+        if getenv('PYTHONNOUSERSITE'):
             options["no_user_site"] = 1
-        if os.getenv('PYTHONUNBUFFERED'):
+        if getenv('PYTHONUNBUFFERED'):
             options["unbuffered"] = 1
         parse_env('PYTHONVERBOSE', "verbose", options)
         parse_env('PYTHONOPTIMIZE', "optimize", options)
+        if getenv('PYTHONDEVMODE'):
+            options["dev_mode"] = True
     if (options["interactive"] or
-        (not options["ignore_environment"] and os.getenv('PYTHONINSPECT'))):
+        (not options["ignore_environment"] and getenv('PYTHONINSPECT'))):
         options["inspect"] = 1
 
-    if we_are_translated():
+    if WE_ARE_TRANSLATED:
         flags = [options[flag] for flag in sys_flags]
         sys.flags = type(sys.flags)(flags)
         sys.dont_write_bytecode = bool(sys.flags.dont_write_bytecode)
@@ -552,7 +595,7 @@ def parse_command_line(argv):
     sys._xoptions = dict(x.split('=', 1) if '=' in x else (x, True)
                          for x in options['_xoptions'])
 
-##    if not we_are_translated():
+##    if not WE_ARE_TRANSLATED:
 ##        for key in sorted(options):
 ##            print '%40s: %s' % (key, options[key])
 ##        print '%40s: %s' % ("sys.argv", sys.argv)
@@ -569,22 +612,25 @@ def run_command_line(interactive,
                      warnoptions,
                      unbuffered,
                      ignore_environment,
-                     quiet,
                      verbose,
+                     bytes_warning,
+                     quiet,
                      isolated,
+                     dev_mode,
                      **ignored):
     # with PyPy in top of CPython we can only have around 100
-    # but we need more in the translated PyPy for the compiler package
-    if '__pypy__' not in sys.builtin_module_names:
+    # but we need more in the PyPy level for the compiler package
+    if not WE_ARE_TRANSLATED:
         sys.setrecursionlimit(5000)
-    import os
+    getenv = get_getenv()
+
 
     readenv = not ignore_environment
-    io_encoding = os.getenv("PYTHONIOENCODING") if readenv else None
+    io_encoding = getenv("PYTHONIOENCODING") if readenv else None
     initstdio(io_encoding, unbuffered)
 
     if 'faulthandler' in sys.builtin_module_names:
-        if 'faulthandler' in sys._xoptions or os.getenv('PYTHONFAULTHANDLER'):
+        if dev_mode or 'faulthandler' in sys._xoptions or (readenv and getenv('PYTHONFAULTHANDLER')):
             import faulthandler
             try:
                 faulthandler.enable(2)   # manually set to stderr
@@ -593,28 +639,45 @@ def run_command_line(interactive,
 
     mainmodule = type(sys)('__main__')
     mainmodule.__loader__ = sys.__loader__
-    mainmodule.__builtins__ = os.__builtins__
+    mainmodule.__builtins__ = __builtins__
     mainmodule.__annotations__ = {}
     sys.modules['__main__'] = mainmodule
 
     if not no_site:
-        if _MACOSX:
-            # __PYVENV_LAUNCHER__, used by CPython on macOS, should be ignored
-            # since it (possibly) results in a wrong sys.prefix and
-            # sys.exec_prefix (and consequently sys.path) set by site.py.
-            old_pyvenv_launcher = os.environ.pop('__PYVENV_LAUNCHER__', None)
+        # __PYVENV_LAUNCHER__, used here by CPython on macOS, is be ignored
+        # since it (possibly) results in a wrong sys.prefix and
+        # sys.exec_prefix (and consequently sys.path) set by site.py.
         try:
             import site
         except:
             print("'import site' failed", file=sys.stderr)
-        if _MACOSX and old_pyvenv_launcher:
-            os.environ['__PYVENV_LAUNCHER__'] = old_pyvenv_launcher
 
-    pythonwarnings = readenv and os.getenv('PYTHONWARNINGS')
+    # The priority order for warnings configuration is (highest precedence
+    # first):
+    #
+    # - the BytesWarning filter, if needed ('-b', '-bb')
+    # - any '-W' command line options; then
+    # - the 'PYTHONWARNINGS' environment variable; then
+    # - the dev mode filter ('-X dev', 'PYTHONDEVMODE'); then
+    # - any implicit filters added by _warnings.c/warnings.py
+    #
+    # All settings except the last are passed to the warnings module via
+    # the `sys.warnoptions` list. Since the warnings module works on the basis
+    # of "the most recently added filter will be checked first", we add
+    # the lowest precedence entries first so that later entries override them.
+    sys_warnoptions = []
+    if dev_mode:
+        sys_warnoptions.append("default")
+    pythonwarnings = readenv and getenv('PYTHONWARNINGS')
     if pythonwarnings:
-        warnoptions = pythonwarnings.split(',') + warnoptions
+        sys_warnoptions.extend(pythonwarnings.split(','))
     if warnoptions:
-        sys.warnoptions[:] = warnoptions
+        sys_warnoptions.extend(warnoptions)
+    if bytes_warning:
+        sys_warnoptions.append("error::BytesWarning" if bytes_warning > 1 else "default::BytesWarning")
+
+    if sys_warnoptions:
+        sys.warnoptions[:] = sys_warnoptions
         try:
             if 'warnings' in sys.modules:
                 from warnings import _processoptions
@@ -648,15 +711,8 @@ def run_command_line(interactive,
         # or
         #     * PYTHONINSPECT is set and stdin is a tty.
         #
-        try:
-            # we need a version of getenv that bypasses Python caching
-            from __pypy__.os import real_getenv
-        except ImportError:
-            # dont fail on CPython here
-            real_getenv = os.getenv
-
         return (interactive or
-                ((inspect or (readenv and real_getenv('PYTHONINSPECT')))
+                ((inspect or (readenv and getenv('PYTHONINSPECT')))
                  and sys.stdin.isatty()))
 
     success = True
@@ -700,7 +756,7 @@ def run_command_line(interactive,
                 # $PYTHONSTARTUP.
                 if not quiet:
                     print_banner(not no_site)
-                python_startup = readenv and os.getenv('PYTHONSTARTUP')
+                python_startup = readenv and getenv('PYTHONSTARTUP')
                 if python_startup:
                     try:
                         with open(python_startup, 'rb') as f:
@@ -825,7 +881,7 @@ def run_command_line(interactive,
                 run_toplevel(sys.__interactivehook__)
             pypy_version_info = getattr(sys, 'pypy_version_info', sys.version_info)
             irc_topic = pypy_version_info[3] != 'final' or (
-                            readenv and os.getenv('PYPY_IRC_TOPIC'))
+                            readenv and getenv('PYPY_IRC_TOPIC'))
             success = run_toplevel(interactive_console, mainmodule,
                                    quiet=quiet or not irc_topic)
         except SystemExit as e:
@@ -873,11 +929,10 @@ def setup_bootstrap_path(executable):
 
 @hidden_applevel
 def entry_point(executable, argv):
-    # note that before calling setup_bootstrap_path, we are limited because we
+    # note that before calling 'import site', we are limited because we
     # cannot import stdlib modules. In particular, we cannot use unicode
-    # stuffs (because we need to be able to import encodings) and we cannot
-    # import os, which is used a bit everywhere in app_main, but only imported
-    # *after* setup_bootstrap_path
+    # stuffs (because we need to be able to import encodings). The full stdlib
+    # can only be used in a virtualenv after 'import site' in run_command_line
     setup_bootstrap_path(executable)
     sys.pypy_initfsencoding()
     try:
@@ -942,6 +997,7 @@ if __name__ == '__main__':
         import os
         return os.path.abspath(os.path.join(s, '..'))
 
+    WE_ARE_TRANSLATED = False
     import os
     reset = []
     if 'PYTHONINSPECT_' in os.environ:

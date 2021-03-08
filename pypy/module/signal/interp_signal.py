@@ -256,10 +256,11 @@ def set_wakeup_fd(space, fd):
                     "__pypy__.thread.enable_signals()")
 
     if WIN32:
-        raise oefmt(space.w_NotImplementedError, 
-                    "signal.set_wakeup_fd is not implemented on Windows")
-
-    if fd != -1:
+        # fd can be a socket handle on win32.  We assume on Windows
+        # that 'fd' is valid, either as a file or a socket descriptor,
+        # and don't bother doing checking here.  XXX fix me!
+        pass
+    elif fd != -1:
         try:
             os.fstat(fd)
             flags = rposix.get_status_flags(fd)
@@ -292,8 +293,13 @@ def siginterrupt(space, signum, flag):
 #__________________________________________________________
 
 def timeval_from_double(d, timeval):
-    rffi.setintfield(timeval, 'c_tv_sec', int(d))
-    rffi.setintfield(timeval, 'c_tv_usec', int((d - int(d)) * 1000000))
+    c_tv_sec = int(d)
+    c_tv_usec = int((d - int(d)) * 1000000)
+    # Don't disable the timer if the computation above rounds down to zero.
+    if d > 0.0 and c_tv_sec == 0 and c_tv_usec == 0:
+        c_tv_usec = 1
+    rffi.setintfield(timeval, 'c_tv_sec', c_tv_sec)
+    rffi.setintfield(timeval, 'c_tv_usec', c_tv_usec)
 
 
 def double_from_timeval(tv):

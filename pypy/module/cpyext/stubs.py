@@ -1189,16 +1189,6 @@ def PyModule_GetFilenameObject(space, module):
     __file__ attribute.  If this is not defined, or if it is not a
     unicode string, raise SystemError and return NULL; otherwise return
     a reference to a PyUnicodeObject.
-    """
-    raise NotImplementedError
-
-@cpython_api([PyObject, rffi.INT_real], PyObject)
-def PyNumber_ToBase(space, n, base):
-    """Returns the integer n converted to base base as a string.  The base
-    argument must be one of 2, 8, 10, or 16.  For base 2, 8, or 16, the
-    returned string is prefixed with a base marker of '0b', '0o', or
-    '0x', respectively.  If n is not a Python int, it is converted with
-    PyNumber_Index() first."""
     raise NotImplementedError
 
 @cpython_api([PyFrameObject], rffi.INT_real, error=-1)
@@ -1323,16 +1313,6 @@ def PyTuple_ClearFreeList(space, ):
 @cpython_api([], rffi.UINT, error=CANNOT_FAIL)
 def PyType_ClearCache(space, ):
     """Clear the internal lookup cache. Return the current version tag."""
-    raise NotImplementedError
-
-
-@cpython_api([PyTypeObjectPtr], lltype.Signed, error=CANNOT_FAIL)
-def PyType_GetFlags(space, type):
-    """Return the tp_flags member of type. This function is primarily
-    meant for use with Py_LIMITED_API; the individual flag bits are
-    guaranteed to be stable across Python releases, but access to
-    tp_flags itself is not part of the limited API.
-    """
     raise NotImplementedError
 
 

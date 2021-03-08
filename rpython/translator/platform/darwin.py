@@ -18,7 +18,9 @@ class Darwin(posix.BasePosix):
     shared_only = ()
 
     link_flags = (DARWIN_VERSION_MIN,)
-    cflags = ('-O3', '-fomit-frame-pointer', DARWIN_VERSION_MIN)
+    cflags = ('-O3',
+              '-fomit-frame-pointer',
+              DARWIN_VERSION_MIN,)
 
     so_ext = 'dylib'
     DEFAULT_CC = 'clang'
@@ -39,7 +41,9 @@ class Darwin(posix.BasePosix):
         # we get the basename of the executable we're trying to build.
         return (list(self.shared_only)
                 + ['-dynamiclib', '-install_name', '@rpath/' + target_basename,
-                   '-undefined', 'dynamic_lookup']
+                   '-undefined', 'dynamic_lookup', '-flat_namespace',
+                   '-headerpad_max_install_names',
+                  ]
                 + args)
 
     def _include_dirs_for_libffi(self):
