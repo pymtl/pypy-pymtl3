@@ -43,8 +43,8 @@ working_modules.update([
     "_csv", "_pypyjson", "_posixsubprocess", "_cppyy", # "micronumpy",
     "_jitlog", "_hpy_universal"
     # "_hashlib", "crypt"
-    "mamba",
 ])
+working_modules.add("mamba")
 
 import rpython.rlib.rvmprof.cintf
 if rpython.rlib.rvmprof.cintf.IS_SUPPORTED:
